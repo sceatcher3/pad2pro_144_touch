@@ -56,6 +56,13 @@ KSU 管理器 → 模块 → 从存储安装 → 选 zip → 重启。
 - 无论 HM 怎么配，本模块 post-fs-data.sh 的手动 bind（双视图+防重复+挂后验证）都会执行，保证覆盖生效且可验证；两者叠加内容一致
 - 诊断命令：`hybrid-mount api modules-list`（HM 对各模块的挂载模式）、`hybrid-mount api partitions`（受管分区列表，确认 my_product 是否被 HM 接管）
 
+## tools/ 诊断脚本（不参与安装，仅排查用）
+
+- `check_v12.sh`：一键体检（144Hz 状态/策略 diff/挂载归因），输出 `/sdcard/p2p_v12_check.txt`
+- `mnt_debug.sh`：导出 mountinfo（`/sdcard/p2p_mnt.txt`）
+- `probe_oplus.sh` / `probe2.sh`：只读探针（触控与显示接口 / 策略文件结构）
+- `tune_144.sh`：T1–T5 实验脚本（定位 ColorOS 压帧层，改动系统状态，按需执行）
+
 ## 与其他模块共存
 
 - **Extreme GT 4.2.2（Scene 工具箱安装的 Magisk 格式模块，去温控+锁帧）**：也会挂 `my_product/etc/refresh_rate_config.xml`，但实测它没改 `maxrefreshsettings`（装着它时文件仍是 3，卡 120 依旧）。本模块覆盖与其兼容（去温控走 thermal 文件，互不干扰）；同文件多层挂载时以最上层为准，若发现刷新率行为异常，用 check 脚本核对 `OVERLAY diff检查` 是否仍为 4
