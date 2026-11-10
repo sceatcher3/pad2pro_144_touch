@@ -1,6 +1,6 @@
 id=pad2pro_144_touch
 name=Pad 2 Pro 144Hz Fix & TouchTune
-version=1.3.2
-versionCode=5
+version=1.3.3
+versionCode=6
 author=lead
 description=一加 Pad 2 Pro (OPD2413 / ColorOS 16) 专用: 修复"卡120Hz上不去144" - 运行时三重锁(SF强切+user-preferred+OPlus键)+看门狗纠偏+触控游戏模式+触控IRQ绑大核; 策略源头覆盖由 Extreme GT 元模块接管(详见README). 卸载自动还原.

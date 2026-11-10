@@ -16,7 +16,7 @@
 
 **刷新率（v1.2：策略源头覆盖 + 三重锁 + 看门狗）**
 
-0. **策略源头（v1.3.2 修复挂载）**：`/my_product/etc/refresh_rate_config.xml` 的 `maxrefreshsettings="3"`(=120，**设置状态会被截断**的总开关) 改 `4`(=144)。**双路线**：① 若装有支持 `extra_mount` 的元模块（如 [Magic Mount-rs](https://modules.kernelsu.org/en/modules/magic_mount_rs/)，配置 `/data/adb/magic_mount/config.toml` 或 WebUI 加 `extra_mount=["my_product"]`），模块顶层 `my_product/` 会被元模块原生挂载；② 兜底：post-fs-data.sh 手动 bind-mount 到 /my_product 与 /mnt/vendor 双视图（v1.2 实测有效），带防重复与挂后验证。post-fs-data 按模块字母序执行（extreme_gt → pad2pro_144_touch），本模块的层在 system_server 读配置时位于最上。原文件备份在 `/data/adb/p2p144/refresh_rate_config.xml.bak`
+0. **策略源头（v1.3.3 定稿：OverlayFS 路线）**：`/my_product/etc/refresh_rate_config.xml` 的 `maxrefreshsettings="3"`(=120，**设置状态会被截断**的总开关) 改 `4`(=144)。挂载交由 **Hybrid Mount 以 overlay 模式**自动合并模块内 `my_product/etc/refresh_rate_config.xml`（overlay 合并在 mountinfo 里不可见，属正常）；本模块 post-fs-data.sh 每次开机从当前原件刷新覆盖副本（OTA 自适应，sed 幂等），默认**不做手动 mount**；无元模块的环境可把 `POLICY_OVERLAY` 改 `1` 启用手动 bind 兜底（双视图+防重复+挂后验证，v1.2 实测有效）。原文件备份在 `/data/adb/p2p144/refresh_rate_config.xml.bak`
 1. `peak_refresh_rate / min_refresh_rate` = 144.0（系统会改写为 120.00001，看门狗纠偏）
 2. `oplus_customize_screen_refresh_rate=4`、`user_refresh_rate=144`（OPlus 侧保持一致）
 3. `cmd display set-user-preferred-display-mode 2400 3392 144.0`（横竖屏参数自动兜底）
