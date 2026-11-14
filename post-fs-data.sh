@@ -1,5 +1,6 @@
 #!/system/bin/sh
-# post-fs-data.sh — v1.5.0: 只生成/清理策略覆盖副本, 挂载完全交给元模块
+# post-fs-data.sh — v1.5.1: 只生成/清理策略覆盖副本, 挂载完全交给元模块; 开机清空 post_fs.log
+# v1.5.0: 删除全部自挂载(bind)逻辑
 # 历史: v1.3.5 标准模块目录+bind兜底 → v1.4.1 修 sed /g → v1.4.2 bind判据看活文件
 #       → v1.5.0 删除全部自挂载(bind)逻辑与 POLICY_MOUNT 键; 没装元模块/元模块不接管
 #         my_product 时自动退化为纯运行时方案(SF强切+看门狗), 不再自己 bind。
@@ -14,6 +15,9 @@ LOG=$DATA/post_fs.log
 [ -f "$MODDIR/config.conf" ] && . "$MODDIR/config.conf"
 R=${POLICY_RATE:-4}
 mkdir -p "$DATA"
+
+# v1.5.1: 每次开机清空日志, 只保留本次开机内容(WebUI 字节数/时间即本次活动量)
+: >"$LOG" 2>/dev/null
 
 log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >>"$LOG"; }
 live_rate(){ grep -o 'maxrefreshsettings="[0-9]*"' "$1" 2>/dev/null | tail -n 1; }

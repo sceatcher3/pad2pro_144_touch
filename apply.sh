@@ -1,5 +1,7 @@
 #!/system/bin/sh
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
+# v1.5.1: boot/daemon 开机清空 p2p.log(once 不清); discover() 对 boost 目录改枚举;
+#   status 措辞结果导向(policy_source 键值不变)
 # v1.5.0: SF 1035 为唯一运行期强制手段(settings 仅 boot/once 写一次做 UI 一致性);
 #   看门狗单职责盯实测帧率(稳态10s/复查2s/失败退避60s封顶/日志限频);
 #   触控改持久档位(sensitive_level/smooth_level), 不再常驻写 game_switch;
@@ -157,9 +159,18 @@ apply_touch(){
 }
 
 # ---- 只记录不盲写: 未知格式节点留给后续调参 ----
+# 真机实测(v1.5.0 探针): 这两个路径是目录不是文件, head -c 读目录永远为空;
+# 改为枚举目录内文件名(仍不读内容不写入), 给后续调参留线索
 discover(){
-  log "发现 oplus_touch_boost=$(head -c 120 /proc/oplus_touch_boost 2>/dev/null | tr '\n' ' ')"
-  log "发现 oplus_frame_boost=$(head -c 120 /proc/oplus_frame_boost 2>/dev/null | tr '\n' ' ')"
+  for n in oplus_touch_boost oplus_frame_boost; do
+    if [ -d "/proc/$n" ]; then
+      log "发现 /proc/$n (目录): $(ls "/proc/$n" 2>/dev/null | tr '\n' ' ')"
+    elif [ -e "/proc/$n" ]; then
+      log "发现 /proc/$n=$(head -c 120 "/proc/$n" 2>/dev/null | tr '\n' ' ')"
+    else
+      log "发现 /proc/$n 不存在"
+    fi
+  done
 }
 
 do_apply(){
@@ -235,7 +246,8 @@ watch(){
 case "$1" in
   boot|daemon)
     mkdir -p "$DATA"
-    trim_log
+    # v1.5.1: 每次开机清空日志, 只保留本次开机内容; once(手动应用)不清, 保留守护历史
+    : >"$LOGF" 2>/dev/null
     do_apply
     sleep 3
     verify_and_fix

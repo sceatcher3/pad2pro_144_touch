@@ -29,14 +29,14 @@
 - 内核自带 `touch_boost_cpufreq`（触摸时 CPU 提频）保持原样不动。
 - `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` 格式未知，**只记录不盲写**。
 
-**WebUI（单页状态 + 一键导出日志）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，看守护/刷新率/策略/触控状态与两个日志文件的字节数/最后写入时间；点「导出日志」把状态、策略、两份日志与挂载信息合成一个 txt 写到 `/sdcard/Download/`。页面**不渲染日志内容**；不写配置、不触发应用。v1.5.0：策略卡区分「元模块已合并 / 运行时方案生效中（中性）/ 未生效（异常）」；触控卡以档位为主，game_switch 降为系统自管参考信息。
+**WebUI（v1.5.1：精简状态页 + 诊断导出）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，四张状态卡（看门狗/刷新率/策略/触控）2×2 一屏看完；「诊断与导出」区可一键导出日志或复制原始状态。页面**不渲染日志内容**、不展示 key=value 原文（复制按钮拿到的仍是完整 status 接口文本）；不写配置、不触发应用。策略卡结果导向：「已生效 / 运行时方案（中性）/ 未生效」；触控卡显示灵敏度/平滑档位。**日志每次重启自动清空**，只保留本次开机内容。
 
 **安全设计**
 
 - 首次运行自动备份原始值到 `/data/adb/p2p144/backup.conf`（settings 四键 + sensitive/smooth 档位；不再备份 game_switch）
 - 卸载自动还原 + `cmd display clear-user-preferred-display-mode`；旧版备份的 game_switch 行兼容还原；历史版本自挂载残留 umount 兜底
 - 安装时校验机型（非 OPD2413 拒装）
-- 日志：`/data/adb/p2p144/p2p.log`（超 100KB 自动截断）、`post_fs.log`
+- 日志：`/data/adb/p2p144/p2p.log`、`post_fs.log`——**每次重启自动清空**（v1.5.1），只含本次开机内容；运行中超 100KB 仍会自动截断兜底
 
 ## 安装
 
@@ -72,20 +72,23 @@ v1.5.0 移除的键：`POLICY_MOUNT`（不再自挂载）、`FORCE_SF_MODE`（SF
 
 安装/更新后**重启一次**，模块卡片会出现 **WebUI** 入口（`webroot/index.html`，管理器用 WebView 打开，不需要端口或额外服务）。重启后守护进程约 10 秒启动，状态页点「刷新」即可。
 
-![WebUI 状态页（假数据渲染，点「导出日志」后的 toast）](docs/webui-preview.png)
+![WebUI 状态页（v1.4.3 旧版预览，v1.5.1 已精简为四卡 2×2 + 诊断导出区）](docs/webui-preview.png)
 
-- **状态页**：看门狗是否在跑、实测/目标刷新率、策略来源（元模块合并 / 运行时方案 / 未生效）、触控档位；原始 `key=value` 可一键复制。
-- **日志**：状态页只看两个日志文件的大小与最后写入时间；要看内容点「导出日志」，文件落 `/sdcard/Download/pad2pro-doctor-<时间>.txt`，含 `apply.sh status`、策略活文件/副本、`p2p.log`、`post_fs.log`、`refresh_rate` 挂载信息。导出在设备侧完成；`/sdcard/Download/` 不可写时自动回退 `/data/local/tmp/`，toast 会报出实际路径。
+- **状态页（v1.5.1）**：四卡 2×2 网格（窄屏单列），一屏看完——看门狗、实测刷新率、策略覆盖（已生效 / 运行时方案 / 未生效）、触控档位（灵敏度/平滑）。每 10 秒静默自动刷新，顶栏显示更新时间。
+- **诊断与导出**：「导出日志」把状态、策略、两份日志（本次开机起）与挂载信息合成一个 txt 写到 `/sdcard/Download/pad2pro-doctor-<时间>.txt`；「复制状态」把完整 `key=value` 原始接口文本放进剪贴板（页面本身不展示原文）。导出在设备侧完成；Download 不可写时自动回退 `/data/local/tmp/`，toast 报出实际路径。日志大小/时间参考行可判断守护是否在写。
 - **反馈**：每个按钮点击都有 toast；自动刷新不打扰。
 - **只读**：不改 `config.conf`、不触发 `apply.sh once`；要立即应用仍点模块卡「操作」按钮。
 - 普通浏览器打开只会显示提示页；Magisk 原生没有模块 WebUI，继续用「操作」按钮或命令行。
 
 ## 挂载与元模块
 
-- 覆盖文件写在模块自己的 `my_product/etc/` 下，标准模块目录布局，任何支持分区目录的挂载元模块都能识别；无需为某个元模块写规则或改它的配置。
-- **本模块不自挂载（v1.5.0）**。有些元模块默认不接管 `my_product`（如 Magic Mount-rs 要 `extra_mount=["my_product"]`）——去配它，或接受退化：`apply.sh status` 的 `policy_source=runtime-only` 表示元模块未接管，SF+看门狗仍在锁 144，WebUI 显示中性「运行时方案」而非异常。
-- 核对：`policy=` 应为 `maxrefreshsettings="4"`（元模块已合并）。`policy_bind` 键保留兼容但 v1.5.0 起恒为 `no`（历史残留除外）。
-- `policy_module`（覆盖副本自身内容）用于排查：副本=4 而 policy=3 = 元模块没接管；两个都是 3 = 副本没生成对（看 `post_fs.log`）。
+**什么是元模块（metamodule）**：KernelSU 把「模块如何被挂载」委托给一种特殊模块——`module.prop` 带 `metamodule=1`，如 meta-overlayfs、Hybrid Mount、Magic Mount-rs、Mountify。同一时间只能装一个；**没装元模块，所有普通模块都不会被挂载**（[KSU 官方文档](https://kernelsu.org/guide/metamodule.md)）。它在开机时扫描所有模块的分区目录（含本模块的 `my_product/etc/`）合并进系统。
+
+- 覆盖文件写在模块自己的 `my_product/etc/` 下，标准模块目录布局，任何支持分区目录的元模块都能识别；无需为某个元模块写规则或改它的配置。
+- **本模块不自挂载（v1.5.0）**。有些元模块默认不接管 `my_product`（如 Magic Mount-rs 要 `extra_mount=["my_product"]`）——去配它，或接受退化：`policy_source=runtime-only` 表示策略覆盖未生效，SF+看门狗仍在锁 144，WebUI 显示中性「运行时方案」而非异常。
+- **其他模块可能盖住本模块副本**：例如 extreme_gt（解锁帧率/温控的普通模块）会自己 bind 同一策略文件叠在最上层。这属正常竞争——本模块只看活文件结果（`policy=maxrefreshsettings="4"` 即达标），不区分来源、不对抗。
+- 核对：`policy=` 应为 `maxrefreshsettings="4"`。`policy_bind` 键保留兼容但 v1.5.0 起恒为 `no`（历史残留除外）。
+- `policy_module`（覆盖副本自身内容）用于排查：副本=4 而 policy=3 = 没有外部接管；两个都是 3 = 副本没生成对（看 `post_fs.log`）。
 - 关掉 `POLICY_ENABLE` 时，若元模块在本次开机早期已经合并了旧副本，那个副本可能撑完这一轮开机；稳妥做法是重启两次，或先手动删掉模块下的 `my_product/` 再重启。
 
 ## tools/ 诊断脚本（不参与安装，仅排查用）

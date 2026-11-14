@@ -32,7 +32,7 @@
 | `/proc/touchpanel/touch_scene_para` | ✅ | ✅ | 官方场景通道，格式 `名字:整数;名字:整数`；关键字含 `sensitive_level`/`set_package_type` 等。系统按场景下发参数的同通道入口（备选，未采用）。`pen_sensitive_level` 动手写笔管线，**别碰**。 |
 | `/proc/touchpanel/touch_scene_default_para` | ✅ | 只读 | 厂商默认场景 XML（request_firmware 加载）。探针已补采。 |
 | `/proc/touchpanel/report_rate*`、`high_frame_rate` | ❌/no-op | — | DTS 无 support 或 NT36536 无回调。报点率由固件按显示刷新率自适应，用户态无旋钮。社区 182 节点属 S3910/hbp 栈，不适用本机。 |
-| `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` | ？ | 未知 | 本分支源码 grep 不到创建者（可能闭源 ko）。**维持只记录不盲写**。同名官方实现实为 sysfs `/sys/devices/system/cpu/cpu*/touch_boost/`（CPU 提频，非触控报点）与 `/proc/sys/fbg/`（调度帧率 boost）。 |
+| `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` | ✅ **是目录** | 未知 | 真机探针（2026-11-15）证实两者存在但为**目录**（旧版 `head -c` 读目录永远为空，已改为枚举文件名）。本分支源码 grep 不到创建者（可能闭源 ko）。**维持只记录不盲写**。同名官方实现实为 sysfs `/sys/devices/system/cpu/cpu*/touch_boost/`（CPU 提频，非触控报点）与 `/proc/sys/fbg/`（调度帧率 boost）。 |
 | `framework_mode` | ❌ | — | 本机探针实测不存在（README 既有结论）。 |
 
 ## 4. 档位表（DTS 一手，NT36536）
@@ -58,6 +58,27 @@
 - 节点不存在（OTA 换栈）→ 跳过并记日志，退化为仅 IRQ 亲和性；绝不盲写。
 - 卸载还原两档位（backup.conf 新增 sensitive/smooth 行）；旧备份的 game_switch 行兼容还原。
 - 备选未采用：事件驱动游戏白名单开 game_switch（工程量大、前台检测在 ColorOS 分屏/浮窗下需实测）；`touch_scene_para` 同通道写档位（与直写 proc 效果等价，多一层解析，留作后续）。
+
+## 5b. 真机探针回证（2026-11-15，v1.5.0 装机后首采）
+
+设备：OPD2413 / ColorOS 16.0.10.600(CN01) / 内核 6.6.118-android15-8 / my_product 24926_1610_B。
+以下全部来自 `pad2pro_probe.txt` 原始输出，**一手实测**，修正/确认调研推断：
+
+| 项 | 实测值 | 结论 |
+|---|---|---|
+| `game_switch_enable` 读出 | `0, high_frame_support:0, high_frame_value:0` | ✅ 与 B1 预测的 v2 格式完全一致；模块不写它后稳定为 0（系统自管） |
+| `sensitive_level` / `smooth_level` | `4` / `1` | ✅ 节点存在、写入成功、探针时（开机后 3 分钟）仍保持 |
+| `touch_scene_para` 当前值 | `screen_lock_mode:0 sensitive_level:0 set_package_type:0 pen_sensitive_level:254 touch_leave_jitter:0` | ⚠️ 场景通道的 sensitive_level=0 与 proc 直写的 chosen=4 **并存不冲突**——场景通道是另一层（按包名/activity 增量），直写档位不被它覆盖 |
+| `touch_scene_default_para` | 完整 XML（version 2025060510），内容**全是 pen_sensitive_level**（手写笔锁点：默认 254，文件管理/相册等 15，笔记/绘画类 3） | ✅ 官方场景配置只管手写笔，不管手指灵敏度——进一步支持「直写 sensitive_level 不与系统拉锯」；也印证 pen 管线刻意不碰是对的 |
+| `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` | **存在，但是目录**（`ls /proc` 可见；`[ -f ]` 判否） | 🔧 旧 discover() 用 head -c 读目录永远为空（日志里 `发现 oplus_touch_boost=` 即此因）；已改为枚举目录内文件名，仍不盲写 |
+| `/odm/bin/touchHidlTest` | 存在（52064 字节，2026-09-11） | Binder 触控通道可用（备选方案②的基础设施在位，本版未用） |
+| `incell_panel` / `charge_detect` | `1` / `0` | ✅ incell 确认（灭屏 MODE_GAME,false 路径适用）；探针时未充电 |
+| IRQ | 每次开机编号不同（288→343→279→282…），匹配关键字 `touch` 稳定命中 | ✅ 动态解析 IRQ 的设计正确，不能硬编码 288 |
+| 策略活文件 | `maxrefreshsettings="4"`，mountinfo 归因 `/adb/modules/extreme_gt/my_product/etc/...` | ⚠️ 实际最上层是 **extreme_gt（普通模块，解锁帧率/温控）自己的 bind**；KSU 元模块（metamodule，挂载基础设施）已把本模块副本合并进系统但被 extreme_gt 盖住。本模块 `policy_source=meta` 按活文件内容判定，语义=「外部已接管」（含元模块合并或其他模块 bind），v1.5.1 起文案不特指元模块 |
+| SF 模式表 | `mSfDisplayModes` id=6 → vsyncRate=144.00002；`mActiveSfDisplayMode id=6`；display 侧 `mActiveModeId=7` | ✅ 再次证实两个编号空间；`sf_mode_id` 的 grep 模式 `vsyncRate=144.00` 能命中 `144.00002`（前缀匹配） |
+| `mDisplayModeSpecs` | `primary=physical:(144.0 144.0) render:(144.0 144.0)` | ✅ 策略覆盖+SF 强切后 render range 不再被压 120 |
+
+**旧版拉锯实锤**（p2p.log 历史段）：11-10 至 11-15 凌晨共 40+ 条 `game_switch 漂移(0), 重写`，以及 11-10 18:08–18:14、11-14 01:04–01:14 两段每 5s 一条的 `实测 120Hz != 144Hz, 重新应用(settings+SF)` 刷屏（各持续 6–10 分钟）——正是 v1.5.0 退避+限频+单通道要消灭的形态。v1.5.0 启动后（01:00:05 起）日志干净，无漂移无重写。
 
 ## 6. 真机验证命令（验收清单触控部分）
 

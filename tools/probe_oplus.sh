@@ -96,10 +96,18 @@ for d in /sys/class/touchscreen/*; do
   [ -d "$d" ] && rdir "$d"
 done
 # v1.5.0 补采: 官方场景配置原文(touch_scene_default_para 可能较大, 放宽到 8KB)
+# 注意: /proc/oplus_touch_boost、/proc/oplus_frame_boost 是目录不是文件(真机实测),
+#       用 -e 判断存在性, 目录则枚举内容, 文件才读全文
 sec "6.z 触控场景配置与 boost 节点全文"
 for f in /proc/touchpanel/touch_scene_default_para /proc/touchpanel/touch_scene_para \
          /proc/oplus_touch_boost /proc/oplus_frame_boost; do
-  if [ -f "$f" ]; then
+  if [ -d "$f" ]; then
+    p "--- $f (目录, 枚举) ---"
+    ls -la "$f" >>"$OUT" 2>&1
+    for sub in "$f"/*; do
+      [ -f "$sub" ] && rfile "$sub"
+    done
+  elif [ -e "$f" ]; then
     p "--- $f (前8KB) ---"
     $TO cat "$f" 2>/dev/null | head -c 8192 >>"$OUT"
     echo "" >>"$OUT"

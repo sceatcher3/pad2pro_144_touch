@@ -156,7 +156,12 @@
     border-radius: var(--radius);
     background: linear-gradient(180deg, var(--surface), var(--bg-soft));
   }
-  #touchCard { margin-top: 10px; }
+  .export-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .export-actions button { flex: 1; min-width: 0; }
   .card-head {
     display: flex;
     align-items: center;
@@ -238,7 +243,7 @@
     line-height: 1.5;
     overflow-wrap: anywhere;
   }
-  #exportBtn { width: 100%; margin-top: 10px; }
+
   .logstat {
     margin-top: 10px;
     font-family: var(--mono);
@@ -254,50 +259,6 @@
   }
   .logstat .name { color: var(--text); }
   .logstat .val { flex: 0 1 auto; min-width: 0; text-align: right; overflow-wrap: anywhere; }
-  .raw {
-    margin-top: 14px;
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-  }
-  .raw summary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    color: var(--muted);
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .raw-head {
-    display: flex;
-    justify-content: flex-end;
-    padding-bottom: 8px;
-  }
-  #rawStatus {
-    max-height: 240px;
-    margin: 0 0 14px;
-    padding: 10px;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: #07090c;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    user-select: text;
-    -webkit-user-select: text;
-  }
-  #rawHint { font-size: 12px; }
-  .foot {
-    margin-top: 16px;
-    color: var(--muted);
-    font-size: 12px;
-    text-align: center;
-  }
   .muted { color: var(--muted); }
   .toast {
     position: fixed;
@@ -388,7 +349,7 @@
   <header class="topbar">
     <div class="brand">
       <h1>144Hz Fix &amp; TouchTune</h1>
-      <p><span id="moduleVersion">v—</span> · KernelSU / APatch · <span id="refreshState" class="refresh-state">等待</span></p>
+      <p><span id="moduleVersion">v—</span> · <span id="refreshState" class="refresh-state">等待</span></p>
     </div>
     <span id="overallBadge" class="badge muted">读取中</span>
   </header>
@@ -403,7 +364,7 @@
       <div id="statusError" class="banner bad hidden"></div>
 
       <div class="status-toolbar">
-        <span>状态每 10 秒自动刷新</span>
+        <span id="lastRefresh">尚未更新</span>
         <button type="button" id="refreshStatusBtn">刷新</button>
       </div>
 
@@ -423,31 +384,25 @@
           <div class="card-value" id="policyValue">读取中…</div>
           <div class="card-detail" id="policyDetail">—</div>
         </article>
+        <article class="card tone-muted" id="touchCard">
+          <div class="card-head"><span class="dot"></span><span>触控优化</span></div>
+          <div class="card-value" id="touchValue">读取中…</div>
+          <div class="card-detail" id="touchDetail">—</div>
+        </article>
       </div>
 
-      <article class="card tone-muted" id="touchCard">
-        <div class="card-head"><span class="dot"></span><span>触控优化</span></div>
-        <div class="card-value" id="touchValue">读取中…</div>
-        <div class="card-detail" id="touchDetail">—</div>
-      </article>
-
       <section class="export" aria-labelledby="exportTitle">
-        <div class="export-head"><span class="dot"></span><span id="exportTitle">日志导出</span></div>
+        <div class="export-head"><span class="dot"></span><span id="exportTitle">诊断与导出</span></div>
         <div class="logstat">
           <div><span class="name">p2p.log</span><span class="val" id="statP2p">—</span></div>
           <div><span class="name">post_fs.log</span><span class="val" id="statPostFs">—</span></div>
         </div>
-        <button type="button" id="exportBtn" class="primary">导出日志</button>
-        <p id="exportHint">写入 /sdcard/Download/ · 单文件含状态、策略、两份日志与挂载信息；页面不渲染日志内容。</p>
+        <div class="export-actions">
+          <button type="button" id="exportBtn" class="primary">导出日志</button>
+          <button type="button" id="copyStatus">复制状态</button>
+        </div>
+        <p id="exportHint">含状态、策略、两份日志（本次开机起）· 写入 Download/</p>
       </section>
-
-      <details class="raw">
-        <summary>原始状态 <span id="rawHint" class="muted"></span></summary>
-        <div class="raw-head"><button type="button" id="copyStatus">复制状态</button></div>
-        <pre id="rawStatus">—</pre>
-      </details>
-
-      <footer class="foot"><span id="lastRefresh">尚未更新</span> · 只读页面，不修改系统设置</footer>
     </section>
   </main>
 </div>
@@ -480,7 +435,7 @@
   const EXPORT_TIMEOUT = 25000;
   const TOAST_MS = 2800;
   const TOAST_LONG_MS = 5000;
-  const EXPORT_HINT = '写入 /sdcard/Download/ · 单文件含状态、策略、两份日志与挂载信息；页面不渲染日志内容。';
+  const EXPORT_HINT = '含状态、策略、两份日志（本次开机起）· 写入 Download/';
   const EXPORT_HINT_NO_BRIDGE = '需要在内核管理器 WebView 中打开才能导出。';
 
   const LOG_ROWS = [
@@ -527,7 +482,7 @@
       'policyCard', 'policyValue', 'policyDetail',
       'touchCard', 'touchValue', 'touchDetail',
       'statP2p', 'statPostFs', 'exportBtn', 'exportHint',
-      'rawHint', 'copyStatus', 'rawStatus', 'lastRefresh',
+      'copyStatus', 'lastRefresh',
       'toast', 'copyModal', 'copyFallbackText', 'closeCopyModal'
     ].forEach((id) => { el[id] = $(id); });
   }
@@ -752,15 +707,15 @@
     } else if (daemon === 'alive') {
       daemonTone = 'good';
       daemonText = '运行中';
-      daemonDetail = 'daemon=alive · PID + cmdline 校验通过';
+      daemonDetail = '亮屏自动巡检，漂移即纠偏';
     } else if (daemon === 'dead') {
       daemonTone = 'bad';
       daemonText = '未运行';
-      daemonDetail = 'daemon=dead · 重启后约 10 秒启动，或点模块卡「操作」';
+      daemonDetail = '重启后约 10 秒自动启动，或点模块卡「操作」';
     } else {
       daemonTone = 'muted';
       daemonText = '未知';
-      daemonDetail = '旧版 status 没有 daemon 字段';
+      daemonDetail = '状态字段缺失，请更新模块';
     }
     setCard('daemon', daemonTone, daemonText, daemonDetail);
 
@@ -778,16 +733,15 @@
     } else {
       refreshTone = hz === target ? 'good' : 'bad';
       refreshText = hz + ' Hz';
-      refreshDetail = '目标 ' + target + ' Hz · mode=' + (mode == null ? '—' : mode) +
-        ' · peak=' + (data.peak || '—') + ' / min=' + (data.min || '—');
+      refreshDetail = '目标 ' + target + ' Hz' + (mode == null ? '' : ' · 显示档位 ' + mode);
     }
     setCard('refresh', refreshTone, refreshText, refreshDetail);
 
     let policyTone;
     let policyText;
     let policyDetail;
-    // v1.5.0: 本模块不自挂载, 策略覆盖由元模块合并; 未接管时退化为运行时方案(SF+看门狗),
-    // 只要实测帧率达标就不算异常(policy_source=runtime-only 为中性提示)。
+    // v1.5.1: 策略卡结果导向——活文件=4 即「已生效」(不区分来源: 元模块合并或其他模块 bind);
+    // 未生效但实测帧率达标 → 中性「运行时方案」(SF+看门狗兜底, 不算异常)。
     const runtimeOnly = data.policy_source === 'runtime-only' ||
       (!data.policy_source && policyVal != null && policyVal !== 4 && hz === target);
     if (disabled) {
@@ -801,22 +755,19 @@
     } else if (policyVal === 4) {
       policyTone = 'good';
       policyText = '已生效';
-      policyDetail = 'policy=' + data.policy + ' · 元模块已合并';
+      policyDetail = '策略覆盖已生效，全局限 144 档';
     } else if (runtimeOnly) {
       policyTone = 'muted';
       policyText = '运行时方案';
-      policyDetail = '元模块未接管 my_product · SF+看门狗锁 ' + target + ' Hz 生效中' +
-        (data.policy_module ? ' · 副本=' + data.policy_module : '');
+      policyDetail = '策略覆盖未生效，SF+看门狗锁 ' + target + ' Hz 中';
     } else if (policyVal == null) {
       policyTone = 'warn';
       policyText = '未知';
-      policyDetail = 'policy=' + (data.policy || '—');
+      policyDetail = '策略状态读取失败';
     } else {
       policyTone = 'warn';
       policyText = '未生效';
-      policyDetail = 'policy=' + data.policy + '（144 档应为 4）' +
-        (data.policy_module ? ' · 副本=' + data.policy_module : '') +
-        ' · 实测 ' + (hz == null ? '读取失败' : hz + ' Hz');
+      policyDetail = '策略仍为 ' + policyVal + ' 档（应为 4）· 实测 ' + (hz == null ? '读取失败' : hz + ' Hz');
     }
     setCard('policy', policyTone, policyText, policyDetail);
 
@@ -827,7 +778,6 @@
     // 卡片以档位为主; game_switch 只是系统/游戏助手当前状态, 降为参考信息, 不参与判定。
     const sens = (data.touch_sensitive || '').trim();
     const smoo = (data.touch_smooth || '').trim();
-    const gsRef = gameSwitch ? ' · game_switch=' + gameSwitch + '(系统自管)' : '';
     if (disabled) {
       touchTone = 'muted';
       touchText = '已禁用';
@@ -835,26 +785,26 @@
     } else if (!touchOn) {
       touchTone = 'muted';
       touchText = '已关闭';
-      touchDetail = 'TOUCH_SENSITIVE_LEVEL / TOUCH_SMOOTH_LEVEL 均为 -1' + gsRef;
+      touchDetail = '配置中档位优化已关闭';
     } else if (sens || smoo) {
       touchTone = 'good';
-      touchText = '档位 s' + (sens || '—') + ' / m' + (smoo || '—');
-      touchDetail = '持久档位已写入(亮屏内核自动重放)' + gsRef;
+      touchText = '灵敏度 ' + (sens || '—') + ' · 平滑 ' + (smoo || '—');
+      touchDetail = '持久档位已写入，亮屏自动保持';
     } else if (data.touch_sensitive == null && data.touch_smooth == null) {
       // 旧版 apply.sh 没有档位字段: 回退到 game_switch 展示
       if (gameSwitch === '1') {
         touchTone = 'good';
         touchText = '通道已开';
-        touchDetail = 'game_switch=1 · 旧版状态字段';
+        touchDetail = '旧版游戏触控通道生效中';
       } else {
         touchTone = 'warn';
         touchText = '读取失败';
-        touchDetail = '旧版 status 无档位字段且 game_switch 为空';
+        touchDetail = '触控状态字段缺失，请更新模块';
       }
     } else {
       touchTone = 'warn';
       touchText = '节点缺失';
-      touchDetail = 'sensitive/smooth 读不出(OTA 可能换了触控栈), 仅 IRQ 亲和性生效' + gsRef;
+      touchDetail = '触控节点不可读，仅 IRQ 亲和性生效';
     }
     setCard('touch', touchTone, touchText, touchDetail);
 
@@ -875,9 +825,7 @@
       setOverall('muted', '部分未知');
     }
 
-    el.rawStatus.textContent = state.statusText || '—';
-    el.rawHint.textContent = stale ? '（上次成功数据）' : '';
-    el.lastRefresh.textContent = state.lastGood ? '更新于 ' + timeStr(state.lastGood) : '尚未更新';
+    el.lastRefresh.textContent = (state.lastGood ? '更新于 ' + timeStr(state.lastGood) : '尚未更新') + (stale ? '（上次成功数据）' : '');
     el.copyStatus.disabled = !state.statusText;
   }
 
@@ -979,8 +927,6 @@
           setCard(key, 'muted', '读取失败', '—');
         });
         setOverall('bad', '异常');
-        el.rawStatus.textContent = '—';
-        el.rawHint.textContent = '';
         el.copyStatus.disabled = true;
       }
       setRefreshState('error');
@@ -1018,6 +964,7 @@
       '  echo "version=$V"',
       '  echo "module_dir=$M"',
       "  echo \"exported=$(date '+%Y-%m-%d %H:%M:%S')\"",
+      '  echo "boot_only=1 (日志自本次开机起, 重启自动清空)"',
       '  echo ""',
       '  echo "===== STATUS ====="',
       '  sh "$M/apply.sh" status 2>&1',
@@ -1204,8 +1151,6 @@
     });
     el.disabledBanner.classList.add('hidden');
     hideBanner('statusError');
-    el.rawStatus.textContent = '—';
-    el.rawHint.textContent = '';
     el.copyStatus.disabled = true;
     el.refreshStatusBtn.disabled = true;
     el.exportBtn.disabled = true;
