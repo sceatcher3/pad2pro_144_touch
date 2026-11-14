@@ -1,5 +1,7 @@
 #!/system/bin/sh
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
+# v1.4.0: status 增加 WebUI 只读字段(daemon/target_hz/policy_enable/touch_switch/module_disabled)
+# v1.4.1: status 增加 policy_module(副本自身内容, 用来区分"副本没改对"和"挂了没盖住")
 # 用法: sh apply.sh boot|daemon|once|status
 # boot/daemon: 应用一次并进入看门狗循环  once: 应用一次  status: 打印当前状态
 
@@ -8,6 +10,7 @@ DATA=/data/adb/p2p144
 LOGF=$DATA/p2p.log
 BK=$DATA/backup.conf
 PIDF=$DATA/daemon.pid
+POLICY_SRC=/my_product/etc/refresh_rate_config.xml
 
 # ---- 读取配置 ----
 [ -f "$MODDIR/config.conf" ] && . "$MODDIR/config.conf"
@@ -37,6 +40,8 @@ cur_peak(){ settings get system peak_refresh_rate 2>/dev/null; }
 cur_min(){ settings get system min_refresh_rate 2>/dev/null; }
 render_hz(){ dumpsys display 2>/dev/null | grep -o 'mActiveRenderFrameRate=[0-9]*' | head -n 1 | cut -d= -f2; }
 gs_state(){ sed 's/,.*//' /proc/touchpanel/game_switch_enable 2>/dev/null | tr -d ' '; }
+# 策略文件里的截断开关(取最后一个是真正的总开关; 头部注释里那个是过时的)
+policy_rate(){ grep -o 'maxrefreshsettings="[0-9]*"' "$1" 2>/dev/null | tail -n 1; }
 
 # ---- 备份原始值(仅首次) ----
 save_backup(){
@@ -140,6 +145,9 @@ do_apply(){
   apply_touch
   sf_apply
   discover
+  # v1.4.1: 每次开机/手动应用都留一条策略快照, 排查时不用再猜"是副本错了还是没挂上"
+  pv=$(policy_rate "$POLICY_SRC"); pmv=$(policy_rate "$MODDIR/my_product/etc/refresh_rate_config.xml")
+  log "策略: 活文件=${pv:-none} 副本=${pmv:-none} (144 档应为 maxrefreshsettings=\"4\")"
   log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz gs=$(gs_state)"
 }
 
@@ -199,11 +207,33 @@ case "$1" in
     verify_and_fix
     ;;
   status)
+    # v1.4.0: WebUI 只读字段。旧键名/顺序保持不变，只在末尾追加。
     echo "peak=$(cur_peak) min=$(cur_min)"
     echo "user_mode=$(cmd display get-user-preferred-display-mode 2>/dev/null)"
     echo "render=$(render_hz)Hz"
     echo "game_switch=$(gs_state)"
     echo "mode_active=$(dumpsys display 2>/dev/null | grep -o 'mActiveModeId=[0-9]*' | head -n 1)"
+    # 策略层状态: 活文件里的截断开关 + 是否由本模块 bind(overlay 合并在 mountinfo 不可见, no 不代表没生效)
+    pv=$(policy_rate "$POLICY_SRC")
+    echo "policy=${pv:-unknown}"
+    if grep 'refresh_rate_config.xml' /proc/self/mountinfo 2>/dev/null | grep -q "${MODDIR##*/}"; then
+      echo "policy_bind=yes"
+    else
+      echo "policy_bind=no"
+    fi
+    echo "daemon=$(alive && echo alive || echo dead)"
+    echo "target_hz=${TARGET_HZ:-144}"
+    echo "policy_enable=${POLICY_ENABLE:-1}"
+    echo "touch_switch=${TOUCH_GAME_SWITCH:-1}"
+    if [ -f "$MODDIR/disable" ]; then
+      echo "module_disabled=1"
+    else
+      echo "module_disabled=0"
+    fi
+    # v1.4.1 追加: 覆盖副本自身的内容。副本=4 而 policy=3 => 挂了但没盖住活文件;
+    # 副本也是 3 => 副本没生成对(策略文件格式变了)
+    pmv=$(policy_rate "$MODDIR/my_product/etc/refresh_rate_config.xml")
+    echo "policy_module=${pmv:-none}"
     ;;
   *)
     echo "用法: sh apply.sh boot|daemon|once|status"

@@ -1,0 +1,1413 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0d12">
+<title>144Hz Fix &amp; TouchTune · WebUI</title>
+<style>
+  :root {
+    --bg: #0a0d12;
+    --bg-soft: #0f141c;
+    --surface: #151b25;
+    --surface2: #1c2431;
+    --border: #2a3444;
+    --text: #e9eef7;
+    --muted: #8e9aae;
+    --accent: #5b8cff;
+    --good: #39d98a;
+    --warn: #f5b544;
+    --bad: #ff6472;
+    --radius: 14px;
+    --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 420px at 50% -12%, rgba(91, 140, 255, .16), transparent 62%),
+      var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK SC", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    color-scheme: dark;
+  }
+  .app {
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--sat);
+    padding-bottom: var(--sab);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .topbar {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px 8px;
+  }
+  .brand { min-width: 0; }
+  .brand h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: .01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .brand p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .refresh-state { color: var(--muted); }
+  .refresh-state.busy { color: var(--accent); }
+  .refresh-state.error { color: var(--bad); }
+  .badge {
+    flex: none;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .badge.good { color: var(--good); border-color: rgba(57, 217, 138, .42); }
+  .badge.warn { color: var(--warn); border-color: rgba(245, 181, 68, .42); }
+  .badge.bad { color: var(--bad); border-color: rgba(255, 100, 114, .42); }
+  .tabs {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    padding: 0 16px 10px;
+  }
+  .tab {
+    flex: 1;
+    min-height: 44px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tab.active {
+    background: var(--surface2);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  main { flex: 1; min-height: 0; display: flex; }
+  .view { flex: 1; min-height: 0; }
+  #viewStatus {
+    display: block;
+    overflow-y: auto;
+    padding: 2px 16px 24px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  #viewLogs {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 12px 10px;
+  }
+  .hidden { display: none !important; }
+  .banner {
+    margin: 0 0 12px;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .banner.warn {
+    border-color: rgba(245, 181, 68, .38);
+    background: rgba(245, 181, 68, .08);
+    color: #ffd58a;
+  }
+  .banner.bad {
+    border-color: rgba(255, 100, 114, .38);
+    background: rgba(255, 100, 114, .08);
+    color: #ffb3ba;
+  }
+  #notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+  }
+  #noticeText { flex: 1; min-width: 0; }
+  #retryBtn { flex: none; }
+  .status-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 2px 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 560px) {
+    .cards { grid-template-columns: 1fr 1fr; }
+  }
+  .card {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--surface), var(--bg-soft));
+  }
+  #touchCard { margin-top: 10px; }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .04em;
+  }
+  .dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  .card-value {
+    margin-top: 8px;
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .card-detail {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .card.tone-good .dot { background: var(--good); box-shadow: 0 0 10px rgba(57, 217, 138, .5); }
+  .card.tone-good .card-value { color: var(--good); }
+  .card.tone-warn .dot { background: var(--warn); box-shadow: 0 0 10px rgba(245, 181, 68, .45); }
+  .card.tone-warn .card-value { color: var(--warn); }
+  .card.tone-bad .dot { background: var(--bad); box-shadow: 0 0 10px rgba(255, 100, 114, .48); }
+  .card.tone-bad .card-value { color: var(--bad); }
+  .card.tone-muted .dot { background: var(--muted); }
+  .card.tone-muted .card-value { color: var(--muted); }
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  button:not(.tab):not(.subtab) {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.primary:not(.tab):not(.subtab) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button:active:not(:disabled):not(.tab):not(.subtab) { transform: translateY(1px); }
+  .subtabs {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    padding: 2px 4px 8px;
+  }
+  .subtab {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .subtab.active {
+    background: var(--surface2);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .log-toolbar {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 8px;
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  input[type=checkbox] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+  }
+  .log-meta {
+    flex: none;
+    padding: 0 2px 6px;
+    color: var(--muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .hint {
+    width: 100%;
+    margin: 0 0 6px;
+    min-height: 38px;
+    border: 1px dashed rgba(91, 140, 255, .55);
+    border-radius: 10px;
+    background: rgba(91, 140, 255, .08);
+    color: #9db9ff;
+    font-size: 12px;
+  }
+  #newLogHint {
+    border-style: dashed;
+    border-color: rgba(91, 140, 255, .55);
+    background: rgba(91, 140, 255, .08);
+    color: #9db9ff;
+  }
+  #logError { margin: 0 0 6px; }
+  .log {
+    flex: 1 1 auto;
+    min-height: 140px;
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #07090c;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+    -webkit-user-select: text;
+    tab-size: 4;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .empty {
+    padding: 14px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  .raw {
+    margin-top: 14px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .raw summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .raw-head {
+    display: flex;
+    justify-content: flex-end;
+    padding-bottom: 8px;
+  }
+  #rawStatus {
+    max-height: 240px;
+    margin: 0 0 14px;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #07090c;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  #rawHint { font-size: 12px; }
+  .foot {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+  .muted { color: var(--muted); }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(18px + var(--sab));
+    z-index: 90;
+    max-width: min(560px, calc(100% - 32px));
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #1d2635;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(8px);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast.bad { border-color: rgba(255, 100, 114, .5); }
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    padding-bottom: calc(16px + var(--sab));
+    background: rgba(0, 0, 0, .7);
+  }
+  .modal.hidden { display: none; }
+  .modal-card {
+    width: 100%;
+    max-width: 560px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .modal-card h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+  }
+  .modal-card p {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  #copyFallbackText {
+    width: 100%;
+    height: 38vh;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #07090c;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>144Hz Fix &amp; TouchTune</h1>
+      <p><span id="moduleVersion">v—</span> · KernelSU / APatch · <span id="refreshState" class="refresh-state">等待</span></p>
+    </div>
+    <span id="overallBadge" class="badge muted">读取中</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="页面">
+    <button type="button" class="tab active" id="tabStatus" role="tab" aria-selected="true" aria-controls="viewStatus">状态</button>
+    <button type="button" class="tab" id="tabLogs" role="tab" aria-selected="false" aria-controls="viewLogs">日志</button>
+  </nav>
+
+  <main>
+    <section id="viewStatus" class="view" role="tabpanel" aria-labelledby="tabStatus">
+      <div id="notice" class="banner hidden">
+        <span id="noticeText"></span>
+        <button type="button" id="retryBtn" class="hidden">重试</button>
+      </div>
+      <div id="disabledBanner" class="banner warn hidden">模块已禁用：重启后不会启动守护；以下为当前状态。</div>
+      <div id="statusError" class="banner bad hidden"></div>
+
+      <div class="status-toolbar">
+        <span>状态每 10 秒自动刷新</span>
+        <button type="button" id="refreshStatusBtn">刷新</button>
+      </div>
+
+      <div class="cards">
+        <article class="card tone-muted" id="daemonCard">
+          <div class="card-head"><span class="dot"></span><span>看门狗</span></div>
+          <div class="card-value" id="daemonValue">读取中…</div>
+          <div class="card-detail" id="daemonDetail">—</div>
+        </article>
+        <article class="card tone-muted" id="refreshCard">
+          <div class="card-head"><span class="dot"></span><span>实测刷新率</span></div>
+          <div class="card-value" id="refreshValue">读取中…</div>
+          <div class="card-detail" id="refreshDetail">—</div>
+        </article>
+        <article class="card tone-muted" id="policyCard">
+          <div class="card-head"><span class="dot"></span><span>策略覆盖</span></div>
+          <div class="card-value" id="policyValue">读取中…</div>
+          <div class="card-detail" id="policyDetail">—</div>
+        </article>
+      </div>
+
+      <article class="card tone-muted" id="touchCard">
+        <div class="card-head"><span class="dot"></span><span>触控优化</span></div>
+        <div class="card-value" id="touchValue">读取中…</div>
+        <div class="card-detail" id="touchDetail">—</div>
+      </article>
+
+      <details class="raw">
+        <summary>原始状态 <span id="rawHint" class="muted"></span></summary>
+        <div class="raw-head"><button type="button" id="copyStatus">复制状态</button></div>
+        <pre id="rawStatus">—</pre>
+      </details>
+
+      <footer class="foot"><span id="lastRefresh">尚未更新</span> · 只读页面，不修改系统设置</footer>
+    </section>
+
+    <section id="viewLogs" class="view hidden" role="tabpanel" aria-labelledby="tabLogs">
+      <nav class="subtabs" role="tablist" aria-label="日志文件">
+        <button type="button" class="subtab active" id="logP2p" role="tab" aria-selected="true">p2p.log</button>
+        <button type="button" class="subtab" id="logPostFs" role="tab" aria-selected="false">post_fs.log</button>
+      </nav>
+
+      <div class="log-toolbar">
+        <button type="button" id="refreshLogBtn">刷新</button>
+        <label class="toggle"><input type="checkbox" id="autoRefresh" checked> 自动</label>
+        <label class="toggle"><input type="checkbox" id="showAll"> 全部</label>
+        <button type="button" id="jumpLatest">最新</button>
+        <button type="button" id="copyLog" class="primary">复制</button>
+        <button type="button" id="saveLog">保存</button>
+      </div>
+
+      <div id="logMeta" class="log-meta">—</div>
+      <button type="button" id="newLogHint" class="hint hidden">有新日志 · 点此跳到最新</button>
+      <div id="logError" class="banner bad hidden"></div>
+      <pre id="logView" class="log" tabindex="0" aria-label="日志内容"></pre>
+      <div id="logEmpty" class="empty hidden">暂无日志</div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div id="copyModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="copyModalTitle">
+  <div class="modal-card">
+    <h2 id="copyModalTitle">手动复制</h2>
+    <p>剪贴板不可用。文本已全选，长按选择「复制」。</p>
+    <textarea id="copyFallbackText" readonly></textarea>
+    <div class="modal-actions">
+      <button type="button" id="closeCopyModal">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const MODULE_ID = 'pad2pro_144_touch';
+  const FALLBACK_DIR = '/data/adb/modules/' + MODULE_ID;
+  const DATA_DIR = '/data/adb/p2p144';
+  const SAVE_DIR = '/sdcard/Download/DSH-Go';
+  const REFRESH_MS = 10000;
+  const EXEC_TIMEOUT = 10000;
+  const MAX_LINES = 300;
+
+  const LOG_DEFS = {
+    p2p: { key: 'p2p', label: 'p2p.log', path: DATA_DIR + '/p2p.log' },
+    post_fs: { key: 'post_fs', label: 'post_fs.log', path: DATA_DIR + '/post_fs.log' }
+  };
+
+  const CARD_IDS = {
+    daemon: { card: 'daemonCard', value: 'daemonValue', detail: 'daemonDetail' },
+    refresh: { card: 'refreshCard', value: 'refreshValue', detail: 'refreshDetail' },
+    policy: { card: 'policyCard', value: 'policyValue', detail: 'policyDetail' },
+    touch: { card: 'touchCard', value: 'touchValue', detail: 'touchDetail' }
+  };
+
+  const state = {
+    bridge: null,
+    moduleDir: null,
+    version: null,
+    tab: 'status',
+    logKey: 'p2p',
+    statusText: '',
+    statusData: null,
+    statusStale: false,
+    statusBusy: false,
+    logBusy: false,
+    logPending: false,
+    logs: {
+      p2p: { text: '', missing: false, loadedAt: 0, stale: false },
+      post_fs: { text: '', missing: false, loadedAt: 0, stale: false }
+    },
+    firstLogRender: { p2p: true, post_fs: true },
+    lastGood: null,
+    timer: null,
+    toastTimer: null,
+    bound: false
+  };
+
+  const el = {};
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function cacheEls() {
+    [
+      'moduleVersion', 'refreshState', 'overallBadge',
+      'tabStatus', 'tabLogs', 'viewStatus', 'viewLogs',
+      'notice', 'noticeText', 'retryBtn',
+      'disabledBanner', 'statusError', 'refreshStatusBtn',
+      'daemonCard', 'daemonValue', 'daemonDetail',
+      'refreshCard', 'refreshValue', 'refreshDetail',
+      'policyCard', 'policyValue', 'policyDetail',
+      'touchCard', 'touchValue', 'touchDetail',
+      'rawHint', 'copyStatus', 'rawStatus', 'lastRefresh',
+      'logP2p', 'logPostFs', 'refreshLogBtn', 'autoRefresh', 'showAll',
+      'jumpLatest', 'copyLog', 'saveLog', 'logMeta', 'newLogHint',
+      'logError', 'logView', 'logEmpty',
+      'toast', 'copyModal', 'copyFallbackText', 'closeCopyModal'
+    ].forEach((id) => { el[id] = $(id); });
+  }
+
+  function shq(value) {
+    return "'" + String(value).replace(/'/g, "'\\''") + "'";
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function timeStr(date) {
+    return pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
+  }
+
+  function stamp() {
+    const d = new Date();
+    return String(d.getFullYear()) + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+      '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+  }
+
+  function fmtBytes(n) {
+    if (!n) return '0 B';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function byteLength(text) {
+    try {
+      return new TextEncoder().encode(text).length;
+    } catch (e) {
+      return String(text).length * 2;
+    }
+  }
+
+  function humanError(error) {
+    const raw = error && error.message ? error.message : String(error || '未知错误');
+    if (raw === 'timeout') return '操作超时（执行桥无响应）';
+    if (raw === 'no-bridge') return '页面没有 root 执行桥';
+    return raw.length > 260 ? raw.slice(0, 260) + '…' : raw;
+  }
+
+  function getBridge() {
+    const ksu = window.ksu;
+    return ksu && typeof ksu.exec === 'function' ? ksu : null;
+  }
+
+  function maybeJson(text) {
+    const t = String(text).trim();
+    if (!t || t.charAt(0) !== '{') return null;
+    try {
+      const obj = JSON.parse(t);
+      if (obj && typeof obj === 'object' &&
+          ('stdout' in obj || 'stderr' in obj || 'errno' in obj)) {
+        return obj;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  async function execCmd(cmd, timeout) {
+    if (!state.bridge) throw new Error('no-bridge');
+    const limit = timeout || EXEC_TIMEOUT;
+    let timer = null;
+    try {
+      let call;
+      try {
+        call = Promise.resolve(state.bridge.exec(cmd));
+      } catch (e) {
+        throw e;
+      }
+      const guard = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), limit);
+      });
+      const result = await Promise.race([call, guard]);
+      let out = '';
+      let err = '';
+      let rc = 0;
+      if (typeof result === 'string') {
+        const parsed = maybeJson(result);
+        if (parsed) {
+          out = String(parsed.stdout == null ? '' : parsed.stdout);
+          err = String(parsed.stderr == null ? '' : parsed.stderr);
+          rc = Number(parsed.errno == null ? 0 : parsed.errno);
+        } else {
+          out = result;
+        }
+      } else if (result && typeof result === 'object') {
+        out = String(result.stdout == null ? '' : result.stdout);
+        err = String(result.stderr == null ? '' : result.stderr);
+        rc = Number(result.errno == null ? 0 : result.errno);
+      }
+      let clean = out;
+      const marker = out.match(/__RC=(\d+)\s*$/);
+      if (marker) {
+        rc = Number(marker[1]);
+        clean = out.slice(0, marker.index);
+      }
+      if (err) clean += (clean ? '\n' : '') + err;
+      return { out: clean, rc: rc };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  function parseStatus(text) {
+    const data = {};
+    String(text || '').split('\n').forEach((line) => {
+      const i = line.indexOf('=');
+      if (i > 0) {
+        const key = line.slice(0, i).trim();
+        // apply.sh 的 status 把 peak/min 放在同一行：peak=144.0 min=144.0
+        if (key === 'peak') {
+          const pair = line.match(/^\s*peak=(.*?)\s+min=(.*)$/);
+          if (pair) {
+            data.peak = pair[1].trim();
+            data.min = pair[2].trim();
+            return;
+          }
+        }
+        data[key] = line.slice(i + 1).trim();
+      }
+    });
+    return data;
+  }
+
+  function parseHz(value) {
+    const m = String(value || '').match(/\d+/);
+    return m ? Number(m[0]) : null;
+  }
+
+  function parseMode(value) {
+    const m = String(value || '').match(/mActiveModeId=(\d+)/);
+    return m ? Number(m[1]) : null;
+  }
+
+  function parsePolicy(value) {
+    const m = String(value || '').match(/maxrefreshsettings="?(\d+)"?/);
+    return m ? Number(m[1]) : null;
+  }
+
+  function setCard(key, tone, value, detail) {
+    const ids = CARD_IDS[key];
+    const card = el[ids.card];
+    if (!card) return;
+    card.className = 'card tone-' + tone;
+    el[ids.value].textContent = value;
+    el[ids.detail].textContent = detail;
+  }
+
+  function setOverall(tone, text) {
+    el.overallBadge.className = 'badge ' + tone;
+    el.overallBadge.textContent = text;
+  }
+
+  function setRefreshState(mode) {
+    const node = el.refreshState;
+    node.className = 'refresh-state ' + mode;
+    if (mode === 'busy') {
+      node.textContent = '更新中…';
+    } else if (mode === 'error') {
+      node.textContent = '更新失败';
+    } else if (mode === 'ok') {
+      node.textContent = state.lastGood ? '更新于 ' + timeStr(state.lastGood) : '已更新';
+    } else {
+      node.textContent = '等待';
+    }
+  }
+
+  function showBanner(id, text) {
+    const node = el[id];
+    if (!node) return;
+    node.textContent = text;
+    node.classList.remove('hidden');
+  }
+
+  function hideBanner(id) {
+    const node = el[id];
+    if (node) node.classList.add('hidden');
+  }
+
+  function showNotice(text, tone, retry) {
+    el.noticeText.textContent = text;
+    el.notice.className = 'banner ' + tone;
+    el.retryBtn.classList.toggle('hidden', !retry);
+  }
+
+  function hideNotice() {
+    el.notice.classList.add('hidden');
+  }
+
+  function toast(message, tone) {
+    el.toast.textContent = message;
+    el.toast.className = 'toast show' + (tone ? ' ' + tone : '');
+    if (state.toastTimer) clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(() => {
+      el.toast.className = 'toast';
+    }, 2800);
+  }
+
+  function renderStatus(opts) {
+    opts = opts || {};
+    const data = state.statusData || {};
+    const disabled = data.module_disabled === '1';
+    const daemon = data.daemon || 'unknown';
+    const target = Number(data.target_hz || 144) || 144;
+    const hz = parseHz(data.render);
+    const mode = parseMode(data.mode_active);
+    const policyOn = data.policy_enable !== '0';
+    const policyVal = parsePolicy(data.policy);
+    const touchOn = data.touch_switch !== '0';
+    const gameSwitch = (data.game_switch || '').trim();
+    const stale = !!opts.stale;
+
+    let daemonTone;
+    let daemonText;
+    let daemonDetail;
+    if (disabled) {
+      daemonTone = 'muted';
+      daemonText = '已禁用';
+      daemonDetail = '模块已禁用 · ' + (daemon === 'alive' ? 'daemon 仍在运行（重启后停止）' : '守护不会启动');
+    } else if (daemon === 'alive') {
+      daemonTone = 'good';
+      daemonText = '运行中';
+      daemonDetail = 'daemon=alive · PID + cmdline 校验通过';
+    } else if (daemon === 'dead') {
+      daemonTone = 'bad';
+      daemonText = '未运行';
+      daemonDetail = 'daemon=dead · 重启后约 10 秒启动，或点模块卡「操作」';
+    } else {
+      daemonTone = 'muted';
+      daemonText = '未知';
+      daemonDetail = '旧版 status 没有 daemon 字段';
+    }
+    setCard('daemon', daemonTone, daemonText, daemonDetail);
+
+    let refreshTone;
+    let refreshText;
+    let refreshDetail;
+    if (hz == null) {
+      refreshTone = 'warn';
+      refreshText = '读取失败';
+      refreshDetail = '目标 ' + target + ' Hz · render=' + (data.render || '—');
+    } else if (disabled) {
+      refreshTone = 'muted';
+      refreshText = hz + ' Hz';
+      refreshDetail = '模块已禁用 · 目标 ' + target + ' Hz';
+    } else {
+      refreshTone = hz === target ? 'good' : 'bad';
+      refreshText = hz + ' Hz';
+      refreshDetail = '目标 ' + target + ' Hz · mode=' + (mode == null ? '—' : mode) +
+        ' · peak=' + (data.peak || '—') + ' / min=' + (data.min || '—');
+    }
+    setCard('refresh', refreshTone, refreshText, refreshDetail);
+
+    let policyTone;
+    let policyText;
+    let policyDetail;
+    if (disabled) {
+      policyTone = 'muted';
+      policyText = '已禁用';
+      policyDetail = '模块禁用，策略不再维护';
+    } else if (!policyOn) {
+      policyTone = 'muted';
+      policyText = '已关闭';
+      policyDetail = 'POLICY_ENABLE=0 · 当前 policy=' + (data.policy || '—');
+    } else if (policyVal === 4) {
+      policyTone = 'good';
+      policyText = '已生效';
+      policyDetail = 'policy=' + data.policy + ' · 自挂载=' + (data.policy_bind || '—');
+    } else if (policyVal == null) {
+      policyTone = 'warn';
+      policyText = '未知';
+      policyDetail = 'policy=' + (data.policy || '—');
+    } else {
+      policyTone = 'warn';
+      policyText = '未生效';
+      policyDetail = 'policy=' + data.policy + '（144 档应为 4）· 自挂载=' + (data.policy_bind || '—') +
+        (data.policy_module ? ' · 副本=' + data.policy_module : '');
+    }
+    if (data.policy_bind === 'no') {
+      policyDetail += ' · overlay 下 no 可能仍生效';
+    }
+    setCard('policy', policyTone, policyText, policyDetail);
+
+    let touchTone;
+    let touchText;
+    let touchDetail;
+    if (disabled) {
+      touchTone = 'muted';
+      touchText = '已禁用';
+      touchDetail = '模块禁用，触控优化不再维护';
+    } else if (!touchOn) {
+      touchTone = 'muted';
+      touchText = '已关闭';
+      touchDetail = 'TOUCH_GAME_SWITCH=0';
+    } else if (gameSwitch === '1') {
+      touchTone = 'good';
+      touchText = '通道已开';
+      touchDetail = 'game_switch=1 · 触控优化已启用';
+    } else if (!gameSwitch) {
+      touchTone = 'warn';
+      touchText = '读取失败';
+      touchDetail = 'game_switch 为空';
+    } else {
+      touchTone = 'warn';
+      touchText = '未开启';
+      touchDetail = 'game_switch=' + gameSwitch + '（期望 1）';
+    }
+    setCard('touch', touchTone, touchText, touchDetail);
+
+    el.disabledBanner.classList.toggle('hidden', !disabled);
+
+    const tones = [daemonTone, refreshTone, policyTone, touchTone];
+    if (disabled) {
+      setOverall('muted', '已禁用');
+    } else if (stale) {
+      setOverall('warn', '数据过期');
+    } else if (tones.indexOf('bad') !== -1) {
+      setOverall('bad', '异常');
+    } else if (tones.indexOf('warn') !== -1) {
+      setOverall('warn', '注意');
+    } else if (daemonTone === 'good' && refreshTone === 'good') {
+      setOverall('good', '正常');
+    } else {
+      setOverall('muted', '部分未知');
+    }
+
+    el.rawStatus.textContent = state.statusText || '—';
+    el.rawHint.textContent = stale ? '（上次成功数据）' : '';
+    el.lastRefresh.textContent = state.lastGood ? '更新于 ' + timeStr(state.lastGood) : '尚未更新';
+    el.copyStatus.disabled = !state.statusText;
+  }
+
+  async function locateModule() {
+    const cmd = "M=$(grep -l '^id=" + MODULE_ID + "$' /data/adb/modules/*/module.prop 2>/dev/null | head -n1)\n" +
+      "if [ -n \"$M\" ]; then D=$(dirname \"$M\"); if [ -f \"$D/apply.sh\" ]; then echo \"$D\"; else echo __MODULE_NOT_FOUND; fi\n" +
+      "elif [ -f " + shq(FALLBACK_DIR + '/apply.sh') + " ]; then echo " + shq(FALLBACK_DIR) + "\n" +
+      "else echo __MODULE_NOT_FOUND; fi";
+    const r = await execCmd(cmd, 5000);
+    const out = String(r.out || '').trim();
+    if (!out || out.indexOf('__MODULE_NOT_FOUND') !== -1) return null;
+    return out.split('\n').pop().trim();
+  }
+
+  async function readVersion(dir) {
+    try {
+      const r = await execCmd("sed -n 's/^version=//p' " + shq(dir + '/module.prop') + ' 2>/dev/null | head -n1', 5000);
+      return String(r.out || '').trim() || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function refreshStatus() {
+    if (state.statusBusy || !state.bridge || !state.moduleDir) return;
+    state.statusBusy = true;
+    el.refreshStatusBtn.disabled = true;
+    setRefreshState('busy');
+    try {
+      const r = await execCmd('sh ' + shq(state.moduleDir + '/apply.sh') + ' status 2>&1; echo "__RC=$?"');
+      const text = String(r.out || '').replace(/\s+$/, '');
+      if (!text) throw new Error('status 无输出');
+      if (r.rc !== 0 && !/^(daemon|peak)=/m.test(text)) {
+        const tail = text ? '：' + text.slice(-240) : '';
+        throw new Error('status 退出码 ' + r.rc + tail);
+      }
+      state.statusText = text;
+      state.statusData = parseStatus(text);
+      state.statusStale = false;
+      state.lastGood = new Date();
+      hideBanner('statusError');
+      renderStatus();
+      setRefreshState('ok');
+    } catch (e) {
+      state.statusStale = !!state.statusText;
+      showBanner('statusError', '刷新失败：' + humanError(e) + (state.statusText ? '（显示上次成功数据）' : ''));
+      if (state.statusText) {
+        renderStatus({ stale: true });
+      } else {
+        ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+          setCard(key, 'muted', '读取失败', '—');
+        });
+        setOverall('bad', '异常');
+        el.rawStatus.textContent = '—';
+        el.rawHint.textContent = '';
+        el.copyStatus.disabled = true;
+      }
+      setRefreshState('error');
+    } finally {
+      state.statusBusy = false;
+      el.refreshStatusBtn.disabled = false;
+    }
+  }
+
+  async function refreshLog() {
+    if (state.logBusy || !state.bridge || !state.moduleDir) return;
+    const key = state.logKey;
+    const def = LOG_DEFS[key];
+    state.logBusy = true;
+    state.logPending = false;
+    if (key === state.logKey) el.logMeta.textContent = '读取中…';
+    try {
+      const cmd = 'L=' + shq(def.path) + '; if [ -f "$L" ]; then cat "$L"; else echo __MISSING; fi; echo "__RC=$?"';
+      const r = await execCmd(cmd);
+      let text = String(r.out || '');
+      const missing = /(^|\n)__MISSING(\n|$)/.test(text);
+      if (missing) text = text.replace(/(^|\n)__MISSING(\n|$)/g, '\n');
+      text = text.replace(/\s+$/, '');
+      if (r.rc !== 0 && !missing) {
+        throw new Error('读取日志失败（退出码 ' + r.rc + '）');
+      }
+      state.logs[key] = {
+        text: text,
+        missing: missing,
+        loadedAt: Date.now(),
+        stale: false
+      };
+      if (key === state.logKey) {
+        hideBanner('logError');
+        renderLog();
+      }
+    } catch (e) {
+      const old = state.logs[key];
+      if (key === state.logKey) {
+        if (old && (old.text || old.missing)) {
+          old.stale = true;
+          showBanner('logError', '刷新失败：' + humanError(e) + '（显示上次内容）');
+          renderLog();
+        } else {
+          showBanner('logError', '读取日志失败：' + humanError(e));
+          el.logView.textContent = '';
+          el.logEmpty.textContent = '读取失败';
+          el.logEmpty.classList.remove('hidden');
+          el.logMeta.textContent = '—';
+          el.copyLog.disabled = true;
+          el.saveLog.disabled = true;
+          el.jumpLatest.disabled = true;
+        }
+      } else if (old) {
+        old.stale = true;
+      }
+    } finally {
+      state.logBusy = false;
+      if (state.logPending) {
+        state.logPending = false;
+        refreshLog();
+      }
+    }
+  }
+
+  function isAtBottom() {
+    const node = el.logView;
+    return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+  }
+
+  function renderLog() {
+    const key = state.logKey;
+    const def = LOG_DEFS[key];
+    const log = state.logs[key] || { text: '', missing: true, stale: false };
+    const lines = log.text ? log.text.split('\n') : [];
+    const visible = el.showAll.checked ? lines : lines.slice(-MAX_LINES);
+    const wasAtBottom = isAtBottom();
+    const prevTop = el.logView.scrollTop;
+    const prevText = el.logView.textContent;
+
+    el.logView.textContent = visible.join('\n');
+    const empty = !log.text;
+    el.logEmpty.classList.toggle('hidden', !empty);
+    if (empty) {
+      el.logEmpty.textContent = log.missing
+        ? '暂无日志：守护可能还没运行，或日志已被清理。'
+        : '日志为空。';
+    }
+
+    if (!empty) {
+      if (state.firstLogRender[key] || wasAtBottom) {
+        el.logView.scrollTop = el.logView.scrollHeight;
+      } else {
+        el.logView.scrollTop = prevTop;
+      }
+    }
+
+    const changed = prevText !== el.logView.textContent;
+    if (!empty && changed && !wasAtBottom && !state.firstLogRender[key]) {
+      el.newLogHint.classList.remove('hidden');
+    }
+    if (empty) el.newLogHint.classList.add('hidden');
+    state.firstLogRender[key] = false;
+
+    const lastLine = lines.length ? lines[lines.length - 1] : '';
+    const tsMatch = lastLine.match(/^(\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+    el.logMeta.textContent = def.label + ' · ' + lines.length + ' 行 · ' +
+      fmtBytes(byteLength(log.text)) + (tsMatch ? ' · 最后 ' + tsMatch[1] : '') +
+      (log.stale ? ' · 上次内容' : '');
+    el.copyLog.disabled = empty;
+    el.saveLog.disabled = empty;
+    el.jumpLatest.disabled = empty;
+  }
+
+  function showTab(name) {
+    state.tab = name;
+    el.viewStatus.classList.toggle('hidden', name !== 'status');
+    el.viewLogs.classList.toggle('hidden', name !== 'logs');
+    el.tabStatus.classList.toggle('active', name === 'status');
+    el.tabLogs.classList.toggle('active', name === 'logs');
+    el.tabStatus.setAttribute('aria-selected', String(name === 'status'));
+    el.tabLogs.setAttribute('aria-selected', String(name === 'logs'));
+  }
+
+  function switchTab(name) {
+    if (state.tab === name) {
+      if (name === 'status') refreshStatus();
+      else refreshLog();
+      return;
+    }
+    showTab(name);
+    if (!state.bridge || !state.moduleDir) return;
+    if (name === 'status') refreshStatus();
+    else refreshLog();
+  }
+
+  function switchLog(key) {
+    if (!LOG_DEFS[key]) return;
+    if (state.logKey === key) {
+      refreshLog();
+      return;
+    }
+    state.logKey = key;
+    el.logP2p.classList.toggle('active', key === 'p2p');
+    el.logPostFs.classList.toggle('active', key === 'post_fs');
+    el.logP2p.setAttribute('aria-selected', String(key === 'p2p'));
+    el.logPostFs.setAttribute('aria-selected', String(key === 'post_fs'));
+    el.newLogHint.classList.add('hidden');
+    if (state.logBusy) state.logPending = true;
+    renderLog();
+    if (state.bridge && state.moduleDir) refreshLog();
+  }
+
+  function showCopyModal(text) {
+    el.copyFallbackText.value = text;
+    el.copyModal.classList.remove('hidden');
+    setTimeout(() => {
+      el.copyFallbackText.focus();
+      el.copyFallbackText.select();
+    }, 50);
+  }
+
+  function hideCopyModal() {
+    el.copyModal.classList.add('hidden');
+    el.copyFallbackText.value = '';
+  }
+
+  function base64Utf8(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function copyText(text, label) {
+    const value = String(text || '');
+    if (!value) {
+      toast('没有可复制的' + label);
+      return;
+    }
+    let ok = false;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(value);
+        ok = true;
+      } catch (e) {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        ok = typeof document.execCommand === 'function' && document.execCommand('copy');
+      } catch (e) {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+    }
+    if (ok) {
+      toast('已复制' + label + '（' + fmtBytes(byteLength(value)) + '）');
+      return;
+    }
+    showCopyModal(value);
+    toast('剪贴板不可用，已打开手动复制');
+  }
+
+  async function saveText(key, text) {
+    const name = 'pad2pro-' + key + '-' + stamp() + '.log';
+    const file = SAVE_DIR + '/' + name;
+    const probe = await execCmd('command -v base64 >/dev/null 2>&1 && echo yes || echo no', 3000);
+    const hasBase64 = String(probe.out || '').trim() === 'yes';
+    let body;
+    if (hasBase64) {
+      body = "printf '%s' '" + base64Utf8(text) + "' | base64 -d > " + shq(file);
+    } else {
+      body = "printf '%s' '" + String(text).replace(/'/g, "'\\''") + "' > " + shq(file);
+    }
+    const cmd = 'mkdir -p ' + shq(SAVE_DIR) + ' && ' + body + ' && echo __SAVED; echo "__RC=$?"';
+    const r = await execCmd(cmd, 15000);
+    if (r.rc !== 0 || String(r.out || '').indexOf('__SAVED') === -1) {
+      throw new Error('写入失败（退出码 ' + r.rc + '）');
+    }
+    return file;
+  }
+
+  async function ensureLogText() {
+    const key = state.logKey;
+    if (!state.logs[key].loadedAt) {
+      await refreshLog();
+    }
+    return state.logs[key];
+  }
+
+  async function copyCurrentLog() {
+    const log = await ensureLogText();
+    if (!log || !log.text) {
+      toast('没有可复制的日志');
+      return;
+    }
+    await copyText(log.text, '日志');
+  }
+
+  async function saveCurrentLog() {
+    const log = await ensureLogText();
+    if (!log || !log.text) {
+      toast('没有可保存的日志');
+      return;
+    }
+    el.saveLog.disabled = true;
+    toast('正在保存…');
+    try {
+      const path = await saveText(state.logKey, log.text);
+      toast('已保存：' + path);
+    } catch (e) {
+      toast('保存失败：' + humanError(e), 'bad');
+    } finally {
+      el.saveLog.disabled = !state.logs[state.logKey].text;
+    }
+  }
+
+  function jumpToLatest() {
+    el.logView.scrollTop = el.logView.scrollHeight;
+    el.newLogHint.classList.add('hidden');
+  }
+
+  function startTimer() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(() => {
+      if (document.hidden || !state.bridge || !state.moduleDir) return;
+      if (state.tab === 'status') {
+        refreshStatus();
+        return;
+      }
+      if (el.autoRefresh.checked) refreshLog();
+    }, REFRESH_MS);
+  }
+
+  function bindEvents() {
+    if (state.bound) return;
+    state.bound = true;
+    el.tabStatus.addEventListener('click', () => switchTab('status'));
+    el.tabLogs.addEventListener('click', () => switchTab('logs'));
+    el.refreshStatusBtn.addEventListener('click', () => refreshStatus());
+    el.refreshLogBtn.addEventListener('click', () => refreshLog());
+    el.logP2p.addEventListener('click', () => switchLog('p2p'));
+    el.logPostFs.addEventListener('click', () => switchLog('post_fs'));
+    el.showAll.addEventListener('change', () => renderLog());
+    el.jumpLatest.addEventListener('click', jumpToLatest);
+    el.newLogHint.addEventListener('click', jumpToLatest);
+    el.copyLog.addEventListener('click', copyCurrentLog);
+    el.saveLog.addEventListener('click', saveCurrentLog);
+    el.copyStatus.addEventListener('click', () => copyText(state.statusText, '状态'));
+    el.closeCopyModal.addEventListener('click', hideCopyModal);
+    el.copyModal.addEventListener('click', (event) => {
+      if (event.target === el.copyModal) hideCopyModal();
+    });
+    el.retryBtn.addEventListener('click', () => init());
+    el.logView.addEventListener('scroll', () => {
+      if (isAtBottom()) el.newLogHint.classList.add('hidden');
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !state.bridge || !state.moduleDir) return;
+      if (state.tab === 'status') refreshStatus();
+      else refreshLog();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') hideCopyModal();
+    });
+  }
+
+  function showNoBridge() {
+    state.bridge = null;
+    showNotice('请在 KernelSU / APatch 管理器中打开本页面。普通浏览器没有 root 执行桥，读不到模块状态和日志。', 'warn', true);
+    setOverall('muted', '需要管理器');
+    setRefreshState('wait');
+    ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+      setCard(key, 'muted', '—', '需要 KernelSU / APatch 管理器');
+    });
+    el.disabledBanner.classList.add('hidden');
+    hideBanner('statusError');
+    el.rawStatus.textContent = '—';
+    el.rawHint.textContent = '';
+    el.copyStatus.disabled = true;
+    el.refreshStatusBtn.disabled = true;
+    el.logView.textContent = '';
+    el.logEmpty.textContent = '需要在内核管理器 WebView 中打开。';
+    el.logEmpty.classList.remove('hidden');
+    el.logMeta.textContent = '—';
+    hideBanner('logError');
+    el.newLogHint.classList.add('hidden');
+    ['refreshLogBtn', 'copyLog', 'saveLog', 'jumpLatest'].forEach((id) => {
+      el[id].disabled = true;
+    });
+  }
+
+  async function init() {
+    cacheEls();
+    bindEvents();
+    if (state.timer) {
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+    state.bridge = getBridge();
+    if (!state.bridge) {
+      showNoBridge();
+      return;
+    }
+    hideNotice();
+    state.moduleDir = null;
+    el.refreshStatusBtn.disabled = true;
+    setRefreshState('busy');
+    try {
+      const dir = await locateModule();
+      if (!dir) throw new Error('未找到模块目录（' + FALLBACK_DIR + '）');
+      state.moduleDir = dir;
+      state.version = await readVersion(dir);
+      el.moduleVersion.textContent = state.version ? 'v' + state.version : 'v—';
+      el.refreshStatusBtn.disabled = false;
+      el.refreshLogBtn.disabled = false;
+      showTab('status');
+      await refreshStatus();
+      startTimer();
+    } catch (e) {
+      showNotice('初始化失败：' + humanError(e), 'bad', true);
+      setOverall('bad', '异常');
+      setRefreshState('error');
+      ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+        setCard(key, 'muted', '无法读取', '—');
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

@@ -12,7 +12,7 @@ OUT=/sdcard/p2p_v12_check.txt
   mount | grep refresh_rate
   echo "===== MOUNTINFO 归因 ====="
   grep refresh_rate /proc/self/mountinfo 2>&1
-  echo "===== HM OVERLAY 挂载(目录级) ====="
+  echo "===== ETC 目录级挂载(元模块 overlay 常见) ====="
   grep -E 'on /(mnt/vendor/)?my_product/etc ' /proc/self/mountinfo 2>&1
   echo "===== MODULE OVERLAY 副本 ====="
   grep -o 'maxrefreshsettings="[0-9]*"' /data/adb/modules/pad2pro_144_touch/my_product/etc/refresh_rate_config.xml 2>&1
