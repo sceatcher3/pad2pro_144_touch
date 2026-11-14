@@ -786,6 +786,10 @@
     let policyTone;
     let policyText;
     let policyDetail;
+    // v1.5.0: 本模块不自挂载, 策略覆盖由元模块合并; 未接管时退化为运行时方案(SF+看门狗),
+    // 只要实测帧率达标就不算异常(policy_source=runtime-only 为中性提示)。
+    const runtimeOnly = data.policy_source === 'runtime-only' ||
+      (!data.policy_source && policyVal != null && policyVal !== 4 && hz === target);
     if (disabled) {
       policyTone = 'muted';
       policyText = '已禁用';
@@ -793,11 +797,16 @@
     } else if (!policyOn) {
       policyTone = 'muted';
       policyText = '已关闭';
-      policyDetail = 'POLICY_ENABLE=0 · 当前 policy=' + (data.policy || '—');
+      policyDetail = 'POLICY_ENABLE=0 · 纯运行时方案 · policy=' + (data.policy || '—');
     } else if (policyVal === 4) {
       policyTone = 'good';
       policyText = '已生效';
-      policyDetail = 'policy=' + data.policy + ' · 自挂载=' + (data.policy_bind || '—');
+      policyDetail = 'policy=' + data.policy + ' · 元模块已合并';
+    } else if (runtimeOnly) {
+      policyTone = 'muted';
+      policyText = '运行时方案';
+      policyDetail = '元模块未接管 my_product · SF+看门狗锁 ' + target + ' Hz 生效中' +
+        (data.policy_module ? ' · 副本=' + data.policy_module : '');
     } else if (policyVal == null) {
       policyTone = 'warn';
       policyText = '未知';
@@ -805,17 +814,20 @@
     } else {
       policyTone = 'warn';
       policyText = '未生效';
-      policyDetail = 'policy=' + data.policy + '（144 档应为 4）· 自挂载=' + (data.policy_bind || '—') +
-        (data.policy_module ? ' · 副本=' + data.policy_module : '');
-    }
-    if (data.policy_bind === 'no') {
-      policyDetail += ' · overlay 下 no 可能仍生效';
+      policyDetail = 'policy=' + data.policy + '（144 档应为 4）' +
+        (data.policy_module ? ' · 副本=' + data.policy_module : '') +
+        ' · 实测 ' + (hz == null ? '读取失败' : hz + ' Hz');
     }
     setCard('policy', policyTone, policyText, policyDetail);
 
     let touchTone;
     let touchText;
     let touchDetail;
+    // v1.5.0: 触控改持久档位(sensitive/smooth), 不再常驻写 game_switch。
+    // 卡片以档位为主; game_switch 只是系统/游戏助手当前状态, 降为参考信息, 不参与判定。
+    const sens = (data.touch_sensitive || '').trim();
+    const smoo = (data.touch_smooth || '').trim();
+    const gsRef = gameSwitch ? ' · game_switch=' + gameSwitch + '(系统自管)' : '';
     if (disabled) {
       touchTone = 'muted';
       touchText = '已禁用';
@@ -823,19 +835,26 @@
     } else if (!touchOn) {
       touchTone = 'muted';
       touchText = '已关闭';
-      touchDetail = 'TOUCH_GAME_SWITCH=0';
-    } else if (gameSwitch === '1') {
+      touchDetail = 'TOUCH_SENSITIVE_LEVEL / TOUCH_SMOOTH_LEVEL 均为 -1' + gsRef;
+    } else if (sens || smoo) {
       touchTone = 'good';
-      touchText = '通道已开';
-      touchDetail = 'game_switch=1 · 触控优化已启用';
-    } else if (!gameSwitch) {
-      touchTone = 'warn';
-      touchText = '读取失败';
-      touchDetail = 'game_switch 为空';
+      touchText = '档位 s' + (sens || '—') + ' / m' + (smoo || '—');
+      touchDetail = '持久档位已写入(亮屏内核自动重放)' + gsRef;
+    } else if (data.touch_sensitive == null && data.touch_smooth == null) {
+      // 旧版 apply.sh 没有档位字段: 回退到 game_switch 展示
+      if (gameSwitch === '1') {
+        touchTone = 'good';
+        touchText = '通道已开';
+        touchDetail = 'game_switch=1 · 旧版状态字段';
+      } else {
+        touchTone = 'warn';
+        touchText = '读取失败';
+        touchDetail = '旧版 status 无档位字段且 game_switch 为空';
+      }
     } else {
       touchTone = 'warn';
-      touchText = '未开启';
-      touchDetail = 'game_switch=' + gameSwitch + '（期望 1）';
+      touchText = '节点缺失';
+      touchDetail = 'sensitive/smooth 读不出(OTA 可能换了触控栈), 仅 IRQ 亲和性生效' + gsRef;
     }
     setCard('touch', touchTone, touchText, touchDetail);
 
