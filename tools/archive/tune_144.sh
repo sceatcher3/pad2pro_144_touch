@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# [已归档 v1.4.3] 一次性实验脚本, 不再维护。T1–T5 的结论已并入 apply.sh:
+#   T4(service call SurfaceFlinger 1035)是唯一实测有效手段, 现为 FORCE_SF_MODE 主机制;
+#   其余(T1/T2/T3/T5)均已证伪。仅在需要重跑实验时手动执行 —— 本脚本会改系统设置(末尾还原)。
 # tune_144.sh — 逐项试验: 找出能把实测刷新率翻到 144 的杠杆
 # 在 KSU 终端运行:  sh /sdcard/Download/Code/Module/tune_144.sh
 # 详细诊断自动存 /sdcard/Download/p2p_diag.txt (发回给 AI 分析)

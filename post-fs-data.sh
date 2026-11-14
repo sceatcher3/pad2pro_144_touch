@@ -4,6 +4,7 @@
 #   旧 sed 漏了 /g, 只改到注释那一个, 尾部总开关仍是 3 -> bind 成功但覆盖"未生效"
 # v1.4.2: bind 判据改成"活文件内容对不对"(不再只看 mountinfo), 启动必留一行日志;
 #   service.sh 会在 late_start 再跑本脚本一次, 兜住"元模块后叠加把 bind 盖住"的情况
+# v1.4.3: 无逻辑改动(策略覆盖/挂载判据不变), 仅为版本号同步
 # 覆盖副本生成到 <模块>/my_product/etc/, 任何元模块(overlay/magic/VFS)都能按分区目录识别;
 # 若元模块没接管 my_product, POLICY_MOUNT=auto 时自己 bind 兜底, 不依赖任何元模块的 CLI/配置
 MODDIR=${0%/*}

@@ -9,7 +9,7 @@
 
 ```sh
 # 语法检查（每次改 .sh 都做，PC 上 sh -n 即可）
-for f in *.sh tools/*.sh; do sh -n "$f" || echo "FAIL $f"; done
+for f in *.sh tools/*.sh tools/archive/*.sh; do sh -n "$f" || echo "FAIL $f"; done
 
 # 真机（需 root）
 su -c "sh /data/adb/modules/pad2pro_144_touch/apply.sh status"   # policy= 应为 maxrefreshsettings="4"
@@ -18,7 +18,7 @@ su -c "dumpsys display | grep -E 'mActiveModeId|mActiveRenderFrameRate'"
 
 期望 `mActiveModeId=7`（144 档）、`mActiveRenderFrameRate=144.00002` 左右。
 
-WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」；日志页可切换/复制/保存。页面无 bridge 时只显示提示页，属正常。
+WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-*.txt`（页面不渲染日志，只显示两个日志文件的字节数/最后写入时间）。页面无 bridge 时只显示提示页，属正常。
 
 ## 结构与执行顺序
 
@@ -31,25 +31,27 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」；日
 | `action.sh` | KSU 模块卡「操作」按钮 → `apply.sh once` + `status` | 用户点按 |
 | `uninstall.sh` | 杀守护进程、按 `backup.conf` 还原、清 user-preferred mode、摘挂载、删 `/data/adb/p2p144` | 卸载时 |
 | `config.conf` | 全部可调开关，被 `apply.sh` / `post-fs-data.sh` 以 `.` 加载 | — |
-| `webroot/index.html` | 模块 WebUI：只读状态/日志/复制/保存；KSU/APatch 管理器用 WebView 打开 | 用户打开时 |
-| `tools/*.sh` | 只读/实验诊断脚本，**不参与安装**，不要被模块逻辑引用 | 排查时 |
+| `webroot/index.html` | 模块 WebUI：只读状态 + 日志文件大小/时间 + 一键导出日志到 `/sdcard/Download/`；**不渲染日志内容**；KSU/APatch 管理器用 WebView 打开 | 用户打开时 |
+| `tools/*.sh` | 只读诊断脚本，**不参与安装**，不要被模块逻辑引用；`tools/archive/` 是一次性实验存档，不维护 | 排查时 |
 
 ## 改代码时守住的约定
 
 - **`MODDIR=${0%/*}`**：所有脚本用这一行定位自身目录，不要硬编码 `/data/adb/modules/...`（KSU 与 Magisk 布局、模块名都可能变）。
 - **新增配置项要成对**：`config.conf` 加一行 + `apply.sh` 里 `VAR=${VAR:-默认值}` 兜底一行。缺兜底会在用户配置缺失时拿到空串。
 - **写 settings 不是一劳永逸**：ColorOS 会把 `peak_refresh_rate` 改写成 `120.00001`。所以「写入」和「看门狗纠偏」是同一件事的两半，改写入逻辑要顺手看 `watch()` 的漂移判断（按整数部分比较，`PEAK_I`/`MIN_I`）。
-- **版本号三处同步**：`module.prop` 的 `version` / `versionCode` + 相关脚本头部注释里的版本说明。`versionCode` 必须递增。当前 1.4.2 / versionCode 11。
+- **版本号三处同步**：`module.prop` 的 `version` / `versionCode` + 相关脚本头部注释里的版本说明。`versionCode` 必须递增。当前 1.4.3 / versionCode 12。
 - **幂等**：`post-fs-data.sh` 与 `apply.sh` 都可能在每次开机重复执行。写入前先比较当前值（如 `gs_state`），或让 sed 正则对已处理过的文件仍成立。
 - **守护进程单例**：`alive()` 用 `PIDF` + `/proc/$p/cmdline` 含 `apply.sh` 双条件判断，避免重启后 PID 复用误判。改 `watch()`/`service.sh` 时保留这两条。
 - **status 输出是接口**：`action.sh` 和 `tools/check_v12.sh` 都依赖 `apply.sh status` 的 `key=value` 行。加字段可以，别改已有键名。v1.4.0 新增 `daemon`、`target_hz`、`policy_enable`、`touch_switch`、`module_disabled`，WebUI 依赖它们；v1.4.1 追加 `policy_module`（覆盖副本自身的内容）。
 
-## WebUI 约定（v1.4.0）
+## WebUI 约定（v1.4.3：单页状态 + 日志导出）
 
-- **只读**：`webroot/index.html` 不写 `config.conf`、不触发 `apply.sh once`、不改系统设置；只读 status/日志、复制、写 `/sdcard/Download/DSH-Go/` 导出。
+- **只读**：`webroot/index.html` 不写 `config.conf`、不触发 `apply.sh once`、不改系统设置；只读 status、复制、把日志导出到 `/sdcard/Download/`。
+- **日志不渲染**（v1.4.3）：页面只显示 `p2p.log` / `post_fs.log` 的字节数与最后写入时间；日志内容一律**设备侧**合成（`{ ... } > 文件`），不经过 `exec` 的 stdout（桥有长度上限，整份 `cat` 回来会被静默截断，旧版「日志页空白」就是这么来的）。导出失败自动回退 `/data/local/tmp/`，toast 必须报出实际路径。
 - **零依赖**：单文件、内联 CSS/JS、无 CDN/外部字体/图标；只做深色模式。
 - **命令写死**：所有 `exec` 命令由页面常量拼接，只有模块目录经 `shq()` 加引号；不接受页面输入拼 shell。
-- **渲染安全**：状态/日志一律 `textContent`，禁止把文件内容塞进 `innerHTML`。
+- **渲染安全**：状态一律 `textContent`，禁止把任何内容塞进 `innerHTML`。
+- **反馈**：所有可点控件都要有 toast（动作 + 结果）；自动刷新静默，失败走红条 banner，不弹 toast。
 - **模块目录**：不写死路径；先按 `module.prop` 的 `id` 扫 `/data/adb/modules/*`，回退 `/data/adb/modules/pad2pro_144_touch`。
 - **桥差异**：KSU `exec` 返回 `{errno,stdout,stderr}`，APatch 返回字符串；页面适配层统一，并在命令末尾追加 `__RC=$?` 取真实退出码。不要依赖 `ksu.spawn`。
 - **权限**：`webroot` 的权限/SELinux 由管理器设置，不要在 `customize.sh` 里 chmod。
@@ -68,4 +70,4 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」；日
 - **未知格式的内核节点只记录不盲写**：`/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` 由 `discover()` 记日志；没有一手格式资料就先别 `echo`。
 - **触控 IRQ 匹配关键字是 `touch`**（`touch-00`，本机 IRQ 288），不是 `touchpanel`；亲和性按 `smp_affinity` 十六进制掩码写。
 - **`game_switch_enable` 内核按十六进制解析**，写 `1` 等于 MODE_GAME，和官方 HAL 兜底路径一致。
-- **日志路径**：`/data/adb/p2p144/p2p.log`（>100KB 自动截断）、`post_fs.log`、备份 `backup.conf`。模块运行日志走这两处，别写 `/sdcard`（WebUI 的用户导出例外：`/sdcard/Download/DSH-Go/`）。
+- **日志路径**：`/data/adb/p2p144/p2p.log`（>100KB 自动截断）、`post_fs.log`、备份 `backup.conf`。模块运行日志走这两处，别写 `/sdcard`（WebUI / `tools/check_v12.sh` 的用户导出例外：`/sdcard/Download/`，文件名前缀 `pad2pro-`）。

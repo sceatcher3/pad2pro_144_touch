@@ -56,7 +56,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
-    padding: 14px 16px 8px;
+    padding: 14px 16px 10px;
   }
   .brand { min-width: 0; }
   .brand h1 {
@@ -92,42 +92,15 @@
   .badge.good { color: var(--good); border-color: rgba(57, 217, 138, .42); }
   .badge.warn { color: var(--warn); border-color: rgba(245, 181, 68, .42); }
   .badge.bad { color: var(--bad); border-color: rgba(255, 100, 114, .42); }
-  .tabs {
-    flex: none;
-    display: flex;
-    gap: 6px;
-    padding: 0 16px 10px;
-  }
-  .tab {
-    flex: 1;
-    min-height: 44px;
-    border: 1px solid transparent;
-    border-radius: 12px;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .tab.active {
-    background: var(--surface2);
-    border-color: var(--border);
-    color: var(--text);
-  }
   main { flex: 1; min-height: 0; display: flex; }
-  .view { flex: 1; min-height: 0; }
   #viewStatus {
+    flex: 1;
     display: block;
+    min-height: 0;
     overflow-y: auto;
     padding: 2px 16px 24px;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-  }
-  #viewLogs {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding: 0 12px 10px;
   }
   .hidden { display: none !important; }
   .banner {
@@ -227,7 +200,7 @@
     font: inherit;
     color: inherit;
   }
-  button:not(.tab):not(.subtab) {
+  button:not(.link) {
     min-height: 44px;
     padding: 0 14px;
     border: 1px solid var(--border);
@@ -236,107 +209,51 @@
     color: var(--text);
     cursor: pointer;
   }
-  button.primary:not(.tab):not(.subtab) {
+  button.primary:not(.link) {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
   }
   button:disabled { opacity: .45; cursor: default; }
-  button:active:not(:disabled):not(.tab):not(.subtab) { transform: translateY(1px); }
-  .subtabs {
-    flex: none;
+  button:active:not(:disabled) { transform: translateY(1px); }
+  .export {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--surface), var(--bg-soft));
+  }
+  .export-head {
     display: flex;
-    gap: 6px;
-    padding: 2px 4px 8px;
-  }
-  .subtab {
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .subtab.active {
-    background: var(--surface2);
-    border-color: var(--border);
-    color: var(--text);
-  }
-  .log-toolbar {
-    flex: none;
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding-bottom: 8px;
-  }
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 0 6px;
-    color: var(--muted);
-    font-size: 13px;
-  }
-  input[type=checkbox] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
-  }
-  .log-meta {
-    flex: none;
-    padding: 0 2px 6px;
+    gap: 8px;
     color: var(--muted);
     font-size: 12px;
+    letter-spacing: .04em;
+  }
+  .export p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
     overflow-wrap: anywhere;
   }
-  .hint {
-    width: 100%;
-    margin: 0 0 6px;
-    min-height: 38px;
-    border: 1px dashed rgba(91, 140, 255, .55);
-    border-radius: 10px;
-    background: rgba(91, 140, 255, .08);
-    color: #9db9ff;
-    font-size: 12px;
-  }
-  #newLogHint {
-    border-style: dashed;
-    border-color: rgba(91, 140, 255, .55);
-    background: rgba(91, 140, 255, .08);
-    color: #9db9ff;
-  }
-  #logError { margin: 0 0 6px; }
-  .log {
-    flex: 1 1 auto;
-    min-height: 140px;
-    margin: 0;
-    padding: 12px;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #07090c;
+  #exportBtn { width: 100%; margin-top: 10px; }
+  .logstat {
+    margin-top: 10px;
     font-family: var(--mono);
     font-size: 12px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    user-select: text;
-    -webkit-user-select: text;
-    tab-size: 4;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-  .empty {
-    padding: 14px;
     color: var(--muted);
-    font-size: 13px;
-    text-align: center;
   }
+  .logstat > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 0;
+  }
+  .logstat .name { color: var(--text); }
+  .logstat .val { flex: 0 1 auto; min-width: 0; text-align: right; overflow-wrap: anywhere; }
   .raw {
     margin-top: 14px;
     padding: 0 14px;
@@ -387,6 +304,7 @@
     left: 50%;
     bottom: calc(18px + var(--sab));
     z-index: 90;
+    width: max-content;
     max-width: min(560px, calc(100% - 32px));
     padding: 10px 14px;
     border: 1px solid var(--border);
@@ -395,6 +313,8 @@
     color: var(--text);
     font-size: 13px;
     line-height: 1.45;
+    text-align: left;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
     opacity: 0;
     pointer-events: none;
@@ -405,6 +325,7 @@
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+  .toast.warn { border-color: rgba(245, 181, 68, .55); }
   .toast.bad { border-color: rgba(255, 100, 114, .5); }
   .modal {
     position: fixed;
@@ -472,13 +393,8 @@
     <span id="overallBadge" class="badge muted">读取中</span>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="页面">
-    <button type="button" class="tab active" id="tabStatus" role="tab" aria-selected="true" aria-controls="viewStatus">状态</button>
-    <button type="button" class="tab" id="tabLogs" role="tab" aria-selected="false" aria-controls="viewLogs">日志</button>
-  </nav>
-
   <main>
-    <section id="viewStatus" class="view" role="tabpanel" aria-labelledby="tabStatus">
+    <section id="viewStatus" aria-label="状态">
       <div id="notice" class="banner hidden">
         <span id="noticeText"></span>
         <button type="button" id="retryBtn" class="hidden">重试</button>
@@ -515,6 +431,16 @@
         <div class="card-detail" id="touchDetail">—</div>
       </article>
 
+      <section class="export" aria-labelledby="exportTitle">
+        <div class="export-head"><span class="dot"></span><span id="exportTitle">日志导出</span></div>
+        <div class="logstat">
+          <div><span class="name">p2p.log</span><span class="val" id="statP2p">—</span></div>
+          <div><span class="name">post_fs.log</span><span class="val" id="statPostFs">—</span></div>
+        </div>
+        <button type="button" id="exportBtn" class="primary">导出日志</button>
+        <p id="exportHint">写入 /sdcard/Download/ · 单文件含状态、策略、两份日志与挂载信息；页面不渲染日志内容。</p>
+      </section>
+
       <details class="raw">
         <summary>原始状态 <span id="rawHint" class="muted"></span></summary>
         <div class="raw-head"><button type="button" id="copyStatus">复制状态</button></div>
@@ -522,28 +448,6 @@
       </details>
 
       <footer class="foot"><span id="lastRefresh">尚未更新</span> · 只读页面，不修改系统设置</footer>
-    </section>
-
-    <section id="viewLogs" class="view hidden" role="tabpanel" aria-labelledby="tabLogs">
-      <nav class="subtabs" role="tablist" aria-label="日志文件">
-        <button type="button" class="subtab active" id="logP2p" role="tab" aria-selected="true">p2p.log</button>
-        <button type="button" class="subtab" id="logPostFs" role="tab" aria-selected="false">post_fs.log</button>
-      </nav>
-
-      <div class="log-toolbar">
-        <button type="button" id="refreshLogBtn">刷新</button>
-        <label class="toggle"><input type="checkbox" id="autoRefresh" checked> 自动</label>
-        <label class="toggle"><input type="checkbox" id="showAll"> 全部</label>
-        <button type="button" id="jumpLatest">最新</button>
-        <button type="button" id="copyLog" class="primary">复制</button>
-        <button type="button" id="saveLog">保存</button>
-      </div>
-
-      <div id="logMeta" class="log-meta">—</div>
-      <button type="button" id="newLogHint" class="hint hidden">有新日志 · 点此跳到最新</button>
-      <div id="logError" class="banner bad hidden"></div>
-      <pre id="logView" class="log" tabindex="0" aria-label="日志内容"></pre>
-      <div id="logEmpty" class="empty hidden">暂无日志</div>
     </section>
   </main>
 </div>
@@ -568,15 +472,21 @@
   const MODULE_ID = 'pad2pro_144_touch';
   const FALLBACK_DIR = '/data/adb/modules/' + MODULE_ID;
   const DATA_DIR = '/data/adb/p2p144';
-  const SAVE_DIR = '/sdcard/Download/DSH-Go';
+  const SAVE_DIR = '/sdcard/Download';
+  const FALLBACK_SAVE_DIR = '/data/local/tmp';
+  const EXPORT_PREFIX = 'pad2pro-doctor-';
   const REFRESH_MS = 10000;
   const EXEC_TIMEOUT = 10000;
-  const MAX_LINES = 300;
+  const EXPORT_TIMEOUT = 25000;
+  const TOAST_MS = 2800;
+  const TOAST_LONG_MS = 5000;
+  const EXPORT_HINT = '写入 /sdcard/Download/ · 单文件含状态、策略、两份日志与挂载信息；页面不渲染日志内容。';
+  const EXPORT_HINT_NO_BRIDGE = '需要在内核管理器 WebView 中打开才能导出。';
 
-  const LOG_DEFS = {
-    p2p: { key: 'p2p', label: 'p2p.log', path: DATA_DIR + '/p2p.log' },
-    post_fs: { key: 'post_fs', label: 'post_fs.log', path: DATA_DIR + '/post_fs.log' }
-  };
+  const LOG_ROWS = [
+    { id: 'statP2p', file: 'p2p.log' },
+    { id: 'statPostFs', file: 'post_fs.log' }
+  ];
 
   const CARD_IDS = {
     daemon: { card: 'daemonCard', value: 'daemonValue', detail: 'daemonDetail' },
@@ -589,19 +499,12 @@
     bridge: null,
     moduleDir: null,
     version: null,
-    tab: 'status',
-    logKey: 'p2p',
     statusText: '',
     statusData: null,
     statusStale: false,
     statusBusy: false,
-    logBusy: false,
-    logPending: false,
-    logs: {
-      p2p: { text: '', missing: false, loadedAt: 0, stale: false },
-      post_fs: { text: '', missing: false, loadedAt: 0, stale: false }
-    },
-    firstLogRender: { p2p: true, post_fs: true },
+    statBusy: false,
+    exporting: false,
     lastGood: null,
     timer: null,
     toastTimer: null,
@@ -617,17 +520,14 @@
   function cacheEls() {
     [
       'moduleVersion', 'refreshState', 'overallBadge',
-      'tabStatus', 'tabLogs', 'viewStatus', 'viewLogs',
       'notice', 'noticeText', 'retryBtn',
       'disabledBanner', 'statusError', 'refreshStatusBtn',
       'daemonCard', 'daemonValue', 'daemonDetail',
       'refreshCard', 'refreshValue', 'refreshDetail',
       'policyCard', 'policyValue', 'policyDetail',
       'touchCard', 'touchValue', 'touchDetail',
+      'statP2p', 'statPostFs', 'exportBtn', 'exportHint',
       'rawHint', 'copyStatus', 'rawStatus', 'lastRefresh',
-      'logP2p', 'logPostFs', 'refreshLogBtn', 'autoRefresh', 'showAll',
-      'jumpLatest', 'copyLog', 'saveLog', 'logMeta', 'newLogHint',
-      'logError', 'logView', 'logEmpty',
       'toast', 'copyModal', 'copyFallbackText', 'closeCopyModal'
     ].forEach((id) => { el[id] = $(id); });
   }
@@ -651,10 +551,11 @@
   }
 
   function fmtBytes(n) {
-    if (!n) return '0 B';
-    if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-    return (n / 1024 / 1024).toFixed(1) + ' MB';
+    const v = Number(n);
+    if (!v || isNaN(v) || v < 0) return '0 B';
+    if (v < 1024) return v + ' B';
+    if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' KB';
+    return (v / 1024 / 1024).toFixed(1) + ' MB';
   }
 
   function byteLength(text) {
@@ -697,12 +598,7 @@
     const limit = timeout || EXEC_TIMEOUT;
     let timer = null;
     try {
-      let call;
-      try {
-        call = Promise.resolve(state.bridge.exec(cmd));
-      } catch (e) {
-        throw e;
-      }
+      const call = Promise.resolve(state.bridge.exec(cmd));
       const guard = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('timeout')), limit);
       });
@@ -823,13 +719,13 @@
     el.notice.classList.add('hidden');
   }
 
-  function toast(message, tone) {
+  function toast(message, tone, ms) {
     el.toast.textContent = message;
     el.toast.className = 'toast show' + (tone ? ' ' + tone : '');
     if (state.toastTimer) clearTimeout(state.toastTimer);
     state.toastTimer = setTimeout(() => {
       el.toast.className = 'toast';
-    }, 2800);
+    }, ms || TOAST_MS);
   }
 
   function renderStatus(opts) {
@@ -986,11 +882,58 @@
     }
   }
 
+  function buildStatCmd() {
+    return [
+      'L=' + shq(DATA_DIR),
+      'for f in p2p.log post_fs.log; do',
+      '  p="$L/$f"',
+      '  if [ -f "$p" ]; then',
+      "    echo \"$f|$(wc -c <\"$p\" | tr -d ' ')|$(stat -c '%y' \"$p\" 2>/dev/null | cut -c1-16)\"",
+      '  else',
+      '    echo "$f|-|"',
+      '  fi',
+      'done',
+      'echo "__RC=$?"'
+    ].join('\n');
+  }
+
+  async function refreshLogStats() {
+    if (state.statBusy || !state.bridge || !state.moduleDir) return;
+    state.statBusy = true;
+    try {
+      const r = await execCmd(buildStatCmd(), 6000);
+      const seen = {};
+      String(r.out || '').split('\n').forEach((line) => {
+        const parts = line.trim().split('|');
+        if (parts.length < 2) return;
+        seen[parts[0]] = { bytes: parts[1], time: parts[2] || '' };
+      });
+      LOG_ROWS.forEach((row) => {
+        const node = el[row.id];
+        if (!node) return;
+        const info = seen[row.file];
+        if (!info || info.bytes === '-') {
+          node.textContent = '不存在';
+          return;
+        }
+        const when = info.time ? ' · ' + info.time.slice(5) : '';
+        node.textContent = fmtBytes(info.bytes) + when;
+      });
+    } catch (e) {
+      LOG_ROWS.forEach((row) => {
+        if (el[row.id]) el[row.id].textContent = '—';
+      });
+    } finally {
+      state.statBusy = false;
+    }
+  }
+
   async function refreshStatus() {
-    if (state.statusBusy || !state.bridge || !state.moduleDir) return;
+    if (state.statusBusy || !state.bridge || !state.moduleDir) return false;
     state.statusBusy = true;
     el.refreshStatusBtn.disabled = true;
     setRefreshState('busy');
+    let ok = false;
     try {
       const r = await execCmd('sh ' + shq(state.moduleDir + '/apply.sh') + ' status 2>&1; echo "__RC=$?"');
       const text = String(r.out || '').replace(/\s+$/, '');
@@ -1006,6 +949,7 @@
       hideBanner('statusError');
       renderStatus();
       setRefreshState('ok');
+      ok = true;
     } catch (e) {
       state.statusStale = !!state.statusText;
       showBanner('statusError', '刷新失败：' + humanError(e) + (state.statusText ? '（显示上次成功数据）' : ''));
@@ -1025,150 +969,115 @@
       state.statusBusy = false;
       el.refreshStatusBtn.disabled = false;
     }
+    if (ok) refreshLogStats();
+    return ok;
   }
 
-  async function refreshLog() {
-    if (state.logBusy || !state.bridge || !state.moduleDir) return;
-    const key = state.logKey;
-    const def = LOG_DEFS[key];
-    state.logBusy = true;
-    state.logPending = false;
-    if (key === state.logKey) el.logMeta.textContent = '读取中…';
+  async function manualRefresh() {
+    if (!state.bridge || !state.moduleDir) {
+      toast('尚未连接模块，不能刷新', 'bad');
+      return;
+    }
+    if (state.statusBusy) {
+      toast('正在刷新，稍等');
+      return;
+    }
+    const ok = await refreshStatus();
+    toast(ok ? '已刷新 · ' + timeStr(new Date()) : '刷新失败，原因见上方提示', ok ? '' : 'bad');
+  }
+
+  function buildExportCmd(name) {
+    const lines = [
+      'D=' + shq(SAVE_DIR),
+      'F="$D/' + name + '"',
+      'mkdir -p "$D" 2>/dev/null',
+      'M=' + shq(state.moduleDir || ''),
+      'V=' + shq(state.version || 'unknown'),
+      'L=' + shq(DATA_DIR),
+      'emit(){',
+      '  echo "===== MODULE ====="',
+      '  echo "version=$V"',
+      '  echo "module_dir=$M"',
+      "  echo \"exported=$(date '+%Y-%m-%d %H:%M:%S')\"",
+      '  echo ""',
+      '  echo "===== STATUS ====="',
+      '  sh "$M/apply.sh" status 2>&1',
+      '  echo ""',
+      '  echo "===== POLICY ====="',
+      "  printf 'live=%s\\n' \"$(grep -o 'maxrefreshsettings=\"[0-9]*\"' /my_product/etc/refresh_rate_config.xml 2>/dev/null | tail -n 1)\"",
+      "  printf 'module_copy=%s\\n' \"$(grep -o 'maxrefreshsettings=\"[0-9]*\"' \"$M/my_product/etc/refresh_rate_config.xml\" 2>/dev/null | tail -n 1)\"",
+      '  echo ""',
+      '  echo "===== P2P.LOG ====="',
+      '  if [ -f "$L/p2p.log" ]; then cat "$L/p2p.log"; else echo "(不存在)"; fi',
+      '  echo ""',
+      '  echo "===== POST_FS.LOG ====="',
+      '  if [ -f "$L/post_fs.log" ]; then cat "$L/post_fs.log"; else echo "(不存在)"; fi',
+      '  echo ""',
+      '  echo "===== MOUNTINFO(refresh_rate) ====="',
+      '  grep refresh_rate /proc/self/mountinfo 2>/dev/null || echo "(无)"',
+      '}',
+      'emit >"$F" 2>&1',
+      'rc=$?',
+      'if [ "$rc" != "0" ] || [ ! -s "$F" ]; then',
+      '  F=' + shq(FALLBACK_SAVE_DIR + '/' + name),
+      '  emit >"$F" 2>&1',
+      '  rc=$?',
+      '  echo "__FALLBACK=1"',
+      'fi',
+      'if [ -s "$F" ]; then',
+      '  echo "__OK=$F"',
+      '  echo "__SIZE=$(wc -c <"$F")"',
+      'else',
+      '  echo "__ERR=$rc"',
+      'fi',
+      'echo "__RC=$rc"'
+    ];
+    return lines.join('\n');
+  }
+
+  function splitPath(path) {
+    const i = String(path).lastIndexOf('/');
+    if (i < 0) return ['', String(path)];
+    return [String(path).slice(0, i + 1), String(path).slice(i + 1)];
+  }
+
+  async function exportLog() {
+    if (!state.bridge || !state.moduleDir) {
+      toast('尚未连接模块，不能导出', 'bad');
+      return;
+    }
+    if (state.exporting) {
+      toast('正在导出，稍等');
+      return;
+    }
+    state.exporting = true;
+    el.exportBtn.disabled = true;
+    toast('正在导出…', '', 1500);
     try {
-      const cmd = 'L=' + shq(def.path) + '; if [ -f "$L" ]; then cat "$L"; else echo __MISSING; fi; echo "__RC=$?"';
-      const r = await execCmd(cmd);
-      let text = String(r.out || '');
-      const missing = /(^|\n)__MISSING(\n|$)/.test(text);
-      if (missing) text = text.replace(/(^|\n)__MISSING(\n|$)/g, '\n');
-      text = text.replace(/\s+$/, '');
-      if (r.rc !== 0 && !missing) {
-        throw new Error('读取日志失败（退出码 ' + r.rc + '）');
+      const name = EXPORT_PREFIX + stamp() + '.txt';
+      const r = await execCmd(buildExportCmd(name), EXPORT_TIMEOUT);
+      const okMatch = String(r.out || '').match(/__OK=(.+)/);
+      const sizeMatch = String(r.out || '').match(/__SIZE=(\d+)/);
+      const fellBack = String(r.out || '').indexOf('__FALLBACK=1') !== -1;
+      if (!okMatch || !sizeMatch || Number(sizeMatch[1]) <= 0) {
+        throw new Error(r.rc === 0
+          ? '导出回执不完整（没收到落盘路径）'
+          : '写入失败（退出码 ' + r.rc + '）');
       }
-      state.logs[key] = {
-        text: text,
-        missing: missing,
-        loadedAt: Date.now(),
-        stale: false
-      };
-      if (key === state.logKey) {
-        hideBanner('logError');
-        renderLog();
-      }
-    } catch (e) {
-      const old = state.logs[key];
-      if (key === state.logKey) {
-        if (old && (old.text || old.missing)) {
-          old.stale = true;
-          showBanner('logError', '刷新失败：' + humanError(e) + '（显示上次内容）');
-          renderLog();
-        } else {
-          showBanner('logError', '读取日志失败：' + humanError(e));
-          el.logView.textContent = '';
-          el.logEmpty.textContent = '读取失败';
-          el.logEmpty.classList.remove('hidden');
-          el.logMeta.textContent = '—';
-          el.copyLog.disabled = true;
-          el.saveLog.disabled = true;
-          el.jumpLatest.disabled = true;
-        }
-      } else if (old) {
-        old.stale = true;
-      }
-    } finally {
-      state.logBusy = false;
-      if (state.logPending) {
-        state.logPending = false;
-        refreshLog();
-      }
-    }
-  }
-
-  function isAtBottom() {
-    const node = el.logView;
-    return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
-  }
-
-  function renderLog() {
-    const key = state.logKey;
-    const def = LOG_DEFS[key];
-    const log = state.logs[key] || { text: '', missing: true, stale: false };
-    const lines = log.text ? log.text.split('\n') : [];
-    const visible = el.showAll.checked ? lines : lines.slice(-MAX_LINES);
-    const wasAtBottom = isAtBottom();
-    const prevTop = el.logView.scrollTop;
-    const prevText = el.logView.textContent;
-
-    el.logView.textContent = visible.join('\n');
-    const empty = !log.text;
-    el.logEmpty.classList.toggle('hidden', !empty);
-    if (empty) {
-      el.logEmpty.textContent = log.missing
-        ? '暂无日志：守护可能还没运行，或日志已被清理。'
-        : '日志为空。';
-    }
-
-    if (!empty) {
-      if (state.firstLogRender[key] || wasAtBottom) {
-        el.logView.scrollTop = el.logView.scrollHeight;
+      const path = okMatch[1].trim();
+      const parts = splitPath(path);
+      if (fellBack) {
+        toast('已回退到 ' + parts[0] + '（Download 不可写）\n' + parts[1], 'warn', TOAST_LONG_MS);
       } else {
-        el.logView.scrollTop = prevTop;
+        toast('已导出到 ' + parts[0] + '（' + fmtBytes(sizeMatch[1]) + '）\n' + parts[1], '', TOAST_LONG_MS);
       }
+      refreshLogStats();
+    } catch (e) {
+      toast('导出失败：' + humanError(e), 'bad', TOAST_LONG_MS);
+    } finally {
+      state.exporting = false;
+      el.exportBtn.disabled = false;
     }
-
-    const changed = prevText !== el.logView.textContent;
-    if (!empty && changed && !wasAtBottom && !state.firstLogRender[key]) {
-      el.newLogHint.classList.remove('hidden');
-    }
-    if (empty) el.newLogHint.classList.add('hidden');
-    state.firstLogRender[key] = false;
-
-    const lastLine = lines.length ? lines[lines.length - 1] : '';
-    const tsMatch = lastLine.match(/^(\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-    el.logMeta.textContent = def.label + ' · ' + lines.length + ' 行 · ' +
-      fmtBytes(byteLength(log.text)) + (tsMatch ? ' · 最后 ' + tsMatch[1] : '') +
-      (log.stale ? ' · 上次内容' : '');
-    el.copyLog.disabled = empty;
-    el.saveLog.disabled = empty;
-    el.jumpLatest.disabled = empty;
-  }
-
-  function showTab(name) {
-    state.tab = name;
-    el.viewStatus.classList.toggle('hidden', name !== 'status');
-    el.viewLogs.classList.toggle('hidden', name !== 'logs');
-    el.tabStatus.classList.toggle('active', name === 'status');
-    el.tabLogs.classList.toggle('active', name === 'logs');
-    el.tabStatus.setAttribute('aria-selected', String(name === 'status'));
-    el.tabLogs.setAttribute('aria-selected', String(name === 'logs'));
-  }
-
-  function switchTab(name) {
-    if (state.tab === name) {
-      if (name === 'status') refreshStatus();
-      else refreshLog();
-      return;
-    }
-    showTab(name);
-    if (!state.bridge || !state.moduleDir) return;
-    if (name === 'status') refreshStatus();
-    else refreshLog();
-  }
-
-  function switchLog(key) {
-    if (!LOG_DEFS[key]) return;
-    if (state.logKey === key) {
-      refreshLog();
-      return;
-    }
-    state.logKey = key;
-    el.logP2p.classList.toggle('active', key === 'p2p');
-    el.logPostFs.classList.toggle('active', key === 'post_fs');
-    el.logP2p.setAttribute('aria-selected', String(key === 'p2p'));
-    el.logPostFs.setAttribute('aria-selected', String(key === 'post_fs'));
-    el.newLogHint.classList.add('hidden');
-    if (state.logBusy) state.logPending = true;
-    renderLog();
-    if (state.bridge && state.moduleDir) refreshLog();
   }
 
   function showCopyModal(text) {
@@ -1183,16 +1092,6 @@
   function hideCopyModal() {
     el.copyModal.classList.add('hidden');
     el.copyFallbackText.value = '';
-  }
-
-  function base64Utf8(text) {
-    const bytes = new TextEncoder().encode(text);
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
   }
 
   async function copyText(text, label) {
@@ -1233,116 +1132,52 @@
       return;
     }
     showCopyModal(value);
-    toast('剪贴板不可用，已打开手动复制');
-  }
-
-  async function saveText(key, text) {
-    const name = 'pad2pro-' + key + '-' + stamp() + '.log';
-    const file = SAVE_DIR + '/' + name;
-    const probe = await execCmd('command -v base64 >/dev/null 2>&1 && echo yes || echo no', 3000);
-    const hasBase64 = String(probe.out || '').trim() === 'yes';
-    let body;
-    if (hasBase64) {
-      body = "printf '%s' '" + base64Utf8(text) + "' | base64 -d > " + shq(file);
-    } else {
-      body = "printf '%s' '" + String(text).replace(/'/g, "'\\''") + "' > " + shq(file);
-    }
-    const cmd = 'mkdir -p ' + shq(SAVE_DIR) + ' && ' + body + ' && echo __SAVED; echo "__RC=$?"';
-    const r = await execCmd(cmd, 15000);
-    if (r.rc !== 0 || String(r.out || '').indexOf('__SAVED') === -1) {
-      throw new Error('写入失败（退出码 ' + r.rc + '）');
-    }
-    return file;
-  }
-
-  async function ensureLogText() {
-    const key = state.logKey;
-    if (!state.logs[key].loadedAt) {
-      await refreshLog();
-    }
-    return state.logs[key];
-  }
-
-  async function copyCurrentLog() {
-    const log = await ensureLogText();
-    if (!log || !log.text) {
-      toast('没有可复制的日志');
-      return;
-    }
-    await copyText(log.text, '日志');
-  }
-
-  async function saveCurrentLog() {
-    const log = await ensureLogText();
-    if (!log || !log.text) {
-      toast('没有可保存的日志');
-      return;
-    }
-    el.saveLog.disabled = true;
-    toast('正在保存…');
-    try {
-      const path = await saveText(state.logKey, log.text);
-      toast('已保存：' + path);
-    } catch (e) {
-      toast('保存失败：' + humanError(e), 'bad');
-    } finally {
-      el.saveLog.disabled = !state.logs[state.logKey].text;
-    }
-  }
-
-  function jumpToLatest() {
-    el.logView.scrollTop = el.logView.scrollHeight;
-    el.newLogHint.classList.add('hidden');
+    toast('剪贴板不可用，已打开手动复制', 'warn', TOAST_LONG_MS);
   }
 
   function startTimer() {
     if (state.timer) clearInterval(state.timer);
     state.timer = setInterval(() => {
       if (document.hidden || !state.bridge || !state.moduleDir) return;
-      if (state.tab === 'status') {
-        refreshStatus();
-        return;
-      }
-      if (el.autoRefresh.checked) refreshLog();
+      refreshStatus();
     }, REFRESH_MS);
   }
 
   function bindEvents() {
     if (state.bound) return;
     state.bound = true;
-    el.tabStatus.addEventListener('click', () => switchTab('status'));
-    el.tabLogs.addEventListener('click', () => switchTab('logs'));
-    el.refreshStatusBtn.addEventListener('click', () => refreshStatus());
-    el.refreshLogBtn.addEventListener('click', () => refreshLog());
-    el.logP2p.addEventListener('click', () => switchLog('p2p'));
-    el.logPostFs.addEventListener('click', () => switchLog('post_fs'));
-    el.showAll.addEventListener('change', () => renderLog());
-    el.jumpLatest.addEventListener('click', jumpToLatest);
-    el.newLogHint.addEventListener('click', jumpToLatest);
-    el.copyLog.addEventListener('click', copyCurrentLog);
-    el.saveLog.addEventListener('click', saveCurrentLog);
+    el.refreshStatusBtn.addEventListener('click', manualRefresh);
     el.copyStatus.addEventListener('click', () => copyText(state.statusText, '状态'));
-    el.closeCopyModal.addEventListener('click', hideCopyModal);
-    el.copyModal.addEventListener('click', (event) => {
-      if (event.target === el.copyModal) hideCopyModal();
+    el.exportBtn.addEventListener('click', exportLog);
+    el.closeCopyModal.addEventListener('click', () => {
+      hideCopyModal();
+      toast('已关闭', '', 1200);
     });
-    el.retryBtn.addEventListener('click', () => init());
-    el.logView.addEventListener('scroll', () => {
-      if (isAtBottom()) el.newLogHint.classList.add('hidden');
+    el.copyModal.addEventListener('click', (event) => {
+      if (event.target === el.copyModal) {
+        hideCopyModal();
+        toast('已关闭', '', 1200);
+      }
+    });
+    el.retryBtn.addEventListener('click', () => {
+      toast('正在重新连接…', '', 1500);
+      init();
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden || !state.bridge || !state.moduleDir) return;
-      if (state.tab === 'status') refreshStatus();
-      else refreshLog();
+      refreshStatus();
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') hideCopyModal();
+      if (event.key === 'Escape' && !el.copyModal.classList.contains('hidden')) {
+        hideCopyModal();
+        toast('已关闭', '', 1200);
+      }
     });
   }
 
   function showNoBridge() {
     state.bridge = null;
-    showNotice('请在 KernelSU / APatch 管理器中打开本页面。普通浏览器没有 root 执行桥，读不到模块状态和日志。', 'warn', true);
+    showNotice('请在 KernelSU / APatch 管理器中打开本页面。普通浏览器没有 root 执行桥，读不到模块状态，也无法导出日志。', 'warn', true);
     setOverall('muted', '需要管理器');
     setRefreshState('wait');
     ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
@@ -1354,20 +1189,17 @@
     el.rawHint.textContent = '';
     el.copyStatus.disabled = true;
     el.refreshStatusBtn.disabled = true;
-    el.logView.textContent = '';
-    el.logEmpty.textContent = '需要在内核管理器 WebView 中打开。';
-    el.logEmpty.classList.remove('hidden');
-    el.logMeta.textContent = '—';
-    hideBanner('logError');
-    el.newLogHint.classList.add('hidden');
-    ['refreshLogBtn', 'copyLog', 'saveLog', 'jumpLatest'].forEach((id) => {
-      el[id].disabled = true;
+    el.exportBtn.disabled = true;
+    LOG_ROWS.forEach((row) => {
+      if (el[row.id]) el[row.id].textContent = '—';
     });
+    el.exportHint.textContent = EXPORT_HINT_NO_BRIDGE;
   }
 
   async function init() {
     cacheEls();
     bindEvents();
+    el.exportHint.textContent = EXPORT_HINT;
     if (state.timer) {
       clearInterval(state.timer);
       state.timer = null;
@@ -1380,6 +1212,7 @@
     hideNotice();
     state.moduleDir = null;
     el.refreshStatusBtn.disabled = true;
+    el.exportBtn.disabled = true;
     setRefreshState('busy');
     try {
       const dir = await locateModule();
@@ -1388,8 +1221,7 @@
       state.version = await readVersion(dir);
       el.moduleVersion.textContent = state.version ? 'v' + state.version : 'v—';
       el.refreshStatusBtn.disabled = false;
-      el.refreshLogBtn.disabled = false;
-      showTab('status');
+      el.exportBtn.disabled = false;
       await refreshStatus();
       startTimer();
     } catch (e) {

@@ -1,0 +1,14 @@
+# 全仓库强制 LF：模块脚本跑在 Android 的 /system/bin/sh 上，CRLF 会直接语法报错
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.conf  text eol=lf
+*.prop  text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.yml   text eol=lf
+*.json  text eol=lf
+
+*.png binary
+*.zip binary
+*.jpg binary

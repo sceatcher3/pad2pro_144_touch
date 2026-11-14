@@ -2,6 +2,7 @@
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
 # v1.4.0: status 增加 WebUI 只读字段(daemon/target_hz/policy_enable/touch_switch/module_disabled)
 # v1.4.1: status 增加 policy_module(副本自身内容, 用来区分"副本没改对"和"挂了没盖住")
+# v1.4.3: 本脚本逻辑与 status 接口不变; WebUI 收敛为单页状态 + 日志导出(不再整份 cat 日志回页面)
 # 用法: sh apply.sh boot|daemon|once|status
 # boot/daemon: 应用一次并进入看门狗循环  once: 应用一次  status: 打印当前状态
 

@@ -1,0 +1,11 @@
+# 模块安装包（release 资产），不入库
+*.zip
+
+# 本地临时/构建产物
+.tmp-*
+.tmp-check/
+*.log
+
+# 系统垃圾
+.DS_Store
+Thumbs.db

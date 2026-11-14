@@ -14,7 +14,7 @@
 
 ## 做了什么
 
-**WebUI（v1.4.0：只读状态/日志）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，看守护/刷新率/策略/触控状态，读 `p2p.log` / `post_fs.log`，支持复制与保存到 `/sdcard/Download/DSH-Go/`；不写配置、不触发应用。
+**WebUI（v1.4.3：单页状态 + 一键导出日志）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，看守护/刷新率/策略/触控状态与两个日志文件的字节数/最后写入时间；点「导出日志」把状态、策略、两份日志与挂载信息合成一个 txt 写到 `/sdcard/Download/`。页面**不渲染日志内容**（旧版的日志页在真机上被桥的输出长度上限截断，已移除）；不写配置、不触发应用。
 
 **刷新率（v1.3.5：策略源头覆盖 + 三重锁 + 看门狗）**
 
@@ -69,8 +69,11 @@ KSU / APatch 管理器 → 模块 → 从存储安装 → 选 zip → 重启；M
 
 安装/更新后**重启一次**，模块卡片会出现 **WebUI** 入口（`webroot/index.html`，管理器用 WebView 打开，不需要端口或额外服务）。重启后守护进程约 10 秒启动，状态页点「刷新」即可。
 
+![WebUI 状态页（假数据渲染，点「导出日志」后的 toast）](docs/webui-preview.png)
+
 - **状态页**：看门狗是否在跑、实测/目标刷新率、策略 `maxrefreshsettings` 与自挂载、触控通道；原始 `key=value` 可一键复制。
-- **日志页**：`p2p.log` / `post_fs.log` 两个标签，默认最近 300 行，10 秒自动刷新（可暂停、可切「全部」）；「复制」复制整份，「保存」写到 `/sdcard/Download/DSH-Go/`。
+- **日志**：状态页只看两个日志文件的大小与最后写入时间（判断守护有没有在写日志）；要看内容点「导出日志」，文件落 `/sdcard/Download/pad2pro-doctor-<时间>.txt`，含 `apply.sh status`、策略活文件/副本、`p2p.log`、`post_fs.log`、`refresh_rate` 挂载信息，可直接发回分析。导出在设备侧完成，不受页面渲染限制；`/sdcard/Download/` 不可写时自动回退 `/data/local/tmp/`，toast 会报出实际路径。
+- **反馈**：每个按钮点击都有 toast 提示（动作 + 结果）；自动刷新不打扰。
 - **只读**：不改 `config.conf`、不触发 `apply.sh once`；要立即应用仍点模块卡「操作」按钮。
 - 普通浏览器打开只会显示提示页；Magisk 原生没有模块 WebUI，继续用「操作」按钮或命令行。
 
@@ -86,10 +89,11 @@ KSU / APatch 管理器 → 模块 → 从存储安装 → 选 zip → 重启；M
 
 ## tools/ 诊断脚本（不参与安装，仅排查用）
 
-- `check_v12.sh`：一键体检（144Hz 状态/策略 diff/挂载归因），输出 `/sdcard/p2p_v12_check.txt`
-- `mnt_debug.sh`：导出 mountinfo（`/sdcard/p2p_mnt.txt`）
-- `probe_oplus.sh` / `probe2.sh`：只读探针（触控与显示接口 / 策略文件结构）
-- `tune_144.sh`：T1–T5 实验脚本（定位 ColorOS 压帧层，改动系统状态，按需执行）
+- `check_v12.sh`：一键体检（144Hz 状态/策略 diff/挂载归因），按脚本自身位置定位模块目录，输出 `/sdcard/Download/p2p_v12_check.txt`
+- `probe_oplus.sh`：只读探针（显示/触控接口枚举），输出 `/sdcard/Download/pad2pro_probe.txt`
+- `archive/tune_144.sh`：T1–T5 一次性实验存档（会改系统设置，末尾还原），结论已并入 `apply.sh`，平时不用跑
+
+v1.4.3 清理：删掉 `mnt_debug.sh`（内容与 `check_v12.sh` 的 MOUNTINFO 段重复）、`probe2.sh`（与 `probe_oplus.sh` 重叠且输出顺序有 bug），`tune_144.sh` 移入 `tools/archive/`。
 
 ## 已知取舍
 
@@ -105,7 +109,7 @@ KSU / APatch 管理器 → 模块 → 从存储安装 → 选 zip → 重启；M
 - `game_switch_enable` 内核侧按**十六进制**解析（`kstrtoint(buf,16)`）：写 `1` = MODE_GAME 开；写非 0 时固件同时把 smooth/sensitive 置默认值、`major_rate_limit_times=0x0F`——这正是官方游戏触控行为，本模块写 `1` 与 HAL 兜底路径（无 framework_mode 时直写 "1"）完全一致
 - `high_frame_rate <value> <time>` 子串协议需 `high_frame_rate_support=1`，本机探针为 0，不可用（故不写）
 - SurfaceFlinger 1035 事务码在 OPlus Android 15/16 无可靠一手资料，但 T4 已在本机实测命中（`1035 i32 6` → `mActiveModeId=7`）
-- 策略源头覆盖：v1.2 手动 bind → v1.3.3 只交元模块 overlay → v1.3.5 标准模块目录 + 开机自检兜底（`POLICY_MOUNT=auto/always/never`，`POLICY_ENABLE=0` 可整体关闭）→ v1.4.1 修 sed 漏 `/g`（单行 XML 只改到头部注释）→ v1.4.2 bind 判据改看活文件 + late_start 复核。rateId 词汇表 0=未指定 1=90 2=60 3=120 **4=144**；文件头部注释过时，尾部 `<config maxrefreshsettings="3">` 才是 120 截断总开关。参考 github.com/barsikus007/OnePlus15-165HZ
+- 策略源头覆盖：v1.2 手动 bind → v1.3.3 只交元模块 overlay → v1.3.5 标准模块目录 + 开机自检兜底（`POLICY_MOUNT=auto/always/never`，`POLICY_ENABLE=0` 可整体关闭）→ v1.4.1 修 sed 漏 `/g`（单行 XML 只改到头部注释）→ v1.4.2 bind 判据改看活文件 + late_start 复核 → v1.4.3 WebUI 收敛为单页状态 + 日志导出（日志页移除，导出改设备侧合成）、`tools/` 清理。rateId 词汇表 0=未指定 1=90 2=60 3=120 **4=144**；文件头部注释过时，尾部 `<config maxrefreshsettings="3">` 才是 120 截断总开关。参考 github.com/barsikus007/OnePlus15-165HZ
 
 ## 验证方式
 
@@ -116,7 +120,7 @@ adb shell su -c "dumpsys display | grep -E 'mActiveModeId|mActiveRenderFrameRate
 
 期望：`mActiveModeId=7`、`mActiveRenderFrameRate=144.00002`（或 144.x）、`policy=maxrefreshsettings="4"`。
 
-WebUI：模块卡 → WebUI → 状态页应显示「正常」，日志页可切换/复制/保存。
+WebUI：模块卡 → WebUI → 状态页应显示「正常」；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-<时间>.txt`，文件里 `===== STATUS =====` 段与命令行 status 一致。
 
 ## 改代码
 
