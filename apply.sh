@@ -1,8 +1,12 @@
 #!/system/bin/sh
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
+# v1.5.2: REFRESH_MIN 默认 120 (min=peak=144 会让 ColorOS 固定刷新率, 实测不再 modeset);
+#   settings 写入加 content/runcon 回退 + 回读校验; SF 1035 默认关闭(本机实测空操作);
+#   看门狗改验 mActiveModeId/mRefreshRateChangeable; status 追加 refresh_changeable/sf_1035
 # v1.5.1: boot/daemon 开机清空 p2p.log(once 不清); discover() 对 boost 目录改枚举;
 #   status 措辞结果导向(policy_source 键值不变)
-# v1.5.0: SF 1035 为唯一运行期强制手段(settings 仅 boot/once 写一次做 UI 一致性);
+# v1.5.0: 曾以 SF 1035 为唯一运行期强制手段(本机后续实测为空操作, v1.5.2 已默认关闭);
+#   settings 仅 boot/once 写一次做 UI 一致性;
 #   看门狗单职责盯实测帧率(稳态10s/复查2s/失败退避60s封顶/日志限频);
 #   触控改持久档位(sensitive_level/smooth_level), 不再常驻写 game_switch;
 #   sf_mode_id 守护进程内缓存, 失败才重解析; status 追加 policy_source/touch_sensitive/touch_smooth
@@ -19,10 +23,11 @@ POLICY_SRC=/my_product/etc/refresh_rate_config.xml
 # ---- 读取配置 ----
 [ -f "$MODDIR/config.conf" ] && . "$MODDIR/config.conf"
 REFRESH_PEAK=${REFRESH_PEAK:-144.0}
-REFRESH_MIN=${REFRESH_MIN:-144.0}
+REFRESH_MIN=${REFRESH_MIN:-120.0}
 USER_REFRESH_RATE=${USER_REFRESH_RATE:-144}
 OPLUS_REFRESH_KEY=${OPLUS_REFRESH_KEY:-4}
 SF_FALLBACK_ID=${SF_FALLBACK_ID:-6}
+SF_1035_ENABLE=${SF_1035_ENABLE:-0}
 TOUCH_SENSITIVE_LEVEL=${TOUCH_SENSITIVE_LEVEL:-4}
 TOUCH_SMOOTH_LEVEL=${TOUCH_SMOOTH_LEVEL:-1}
 TOUCH_IRQ_AFFINITY=${TOUCH_IRQ_AFFINITY:-auto}
@@ -37,9 +42,41 @@ trim_log(){
   return 0
 }
 screen_on(){ dumpsys power 2>/dev/null | grep -q 'mWakefulness=Awake'; }
-cur_peak(){ settings get system peak_refresh_rate 2>/dev/null; }
-cur_min(){ settings get system min_refresh_rate 2>/dev/null; }
+# ---- settings 读写(v1.5.2) ----
+# 本机实测: ksu 域直接 settings put/get 会 Failed transaction; su 2000 仍是 ksu 域;
+# content update 返回0但0行. 所以依次尝试 settings -> runcon shell 域 -> content,
+# 并用 content 回读校验; 失败返回1, 由调用方决定是否记日志.
+setting_get(){
+  ns=$1; key=$2
+  v=$(settings get "$ns" "$key" 2>/dev/null)
+  [ -n "$v" ] && [ "$v" != "null" ] && { echo "$v"; return 0; }
+  command -v content >/dev/null 2>&1 || return 1
+  v=$(content query --uri "content://settings/$ns" --projection value --where "name='$key'" 2>/dev/null | sed -n 's/.*value=//p' | head -n 1)
+  [ -n "$v" ] && { echo "$v"; return 0; }
+  return 1
+}
+setting_put(){
+  ns=$1; key=$2; val=$3
+  if settings put "$ns" "$key" "$val" 2>/dev/null; then
+    got=$(setting_get "$ns" "$key")
+    [ "$got" = "$val" ] && return 0
+  fi
+  if command -v runcon >/dev/null 2>&1; then
+    runcon u:r:shell:s0 /system/bin/settings put "$ns" "$key" "$val" 2>/dev/null
+    got=$(setting_get "$ns" "$key")
+    [ "$got" = "$val" ] && return 0
+  fi
+  if command -v content >/dev/null 2>&1; then
+    content update --uri "content://settings/$ns" --bind "value:s:$val" --where "name='$key'" >/dev/null 2>&1
+  fi
+  got=$(setting_get "$ns" "$key")
+  [ "$got" = "$val" ]
+}
+cur_peak(){ setting_get system peak_refresh_rate; }
+cur_min(){ setting_get system min_refresh_rate; }
 render_hz(){ dumpsys display 2>/dev/null | grep -o 'mActiveRenderFrameRate=[0-9]*' | head -n 1 | cut -d= -f2; }
+mode_id(){ dumpsys display 2>/dev/null | grep -o 'mActiveModeId=[0-9]*' | head -n 1 | cut -d= -f2; }
+refresh_changeable(){ dumpsys display 2>/dev/null | grep -o 'mRefreshRateChangeable: [a-z]*' | head -n 1 | awk '{print $2}'; }
 gs_state(){ sed 's/,.*//' /proc/touchpanel/game_switch_enable 2>/dev/null | tr -d ' '; }
 tp_level(){ cat "/proc/touchpanel/$1" 2>/dev/null | tr -d ' \n'; }
 # 策略文件里的截断开关(取最后一个是真正的总开关; 头部注释里那个是过时的)
@@ -54,21 +91,23 @@ save_backup(){
   {
     echo "peak=$(cur_peak)"
     echo "min=$(cur_min)"
-    echo "oplus_rate=$(settings get secure oplus_customize_screen_refresh_rate 2>/dev/null)"
-    echo "user_refresh=$(settings get secure user_refresh_rate 2>/dev/null)"
+    echo "oplus_rate=$(setting_get secure oplus_customize_screen_refresh_rate)"
+    echo "user_refresh=$(setting_get secure user_refresh_rate)"
     echo "sensitive=$(tp_level sensitive_level)"
     echo "smooth=$(tp_level smooth_level)"
   } >"$BK"
   log "已备份原始设置 -> $BK"
 }
 
-# ---- settings 写入: 仅 boot/once 各一次, 做设置页 UI 一致性 ----
-# 运行期强制手段只有 SF 1035; ColorOS 把这些键改写回 120 属正常, 看门狗不再纠偏。
+# ---- settings 写入: boot/once 各一次 + 漂移时用于触发系统重新 modeset ----
+# v1.5.2: 写入走 setting_put(settings -> runcon shell 域 -> content, 回读校验);
+# min=120/peak=144 保持 max-min>1, 让 ColorOS 的 mRefreshRateChangeable=true。
 apply_refresh(){
-  settings put system peak_refresh_rate "$REFRESH_PEAK"
-  settings put system min_refresh_rate "$REFRESH_MIN"
-  settings put secure oplus_customize_screen_refresh_rate "$OPLUS_REFRESH_KEY" 2>/dev/null
-  settings put secure user_refresh_rate "$USER_REFRESH_RATE" 2>/dev/null
+  quiet=${1:-}
+  setting_put system peak_refresh_rate "$REFRESH_PEAK" || [ "$quiet" = quiet ] || log "peak_refresh_rate 写入失败(settings/runcon/content 均被拒)"
+  setting_put system min_refresh_rate "$REFRESH_MIN" || [ "$quiet" = quiet ] || log "min_refresh_rate 写入失败(settings/runcon/content 均被拒)"
+  setting_put secure oplus_customize_screen_refresh_rate "$OPLUS_REFRESH_KEY" || [ "$quiet" = quiet ] || log "oplus_customize_screen_refresh_rate 写入失败"
+  setting_put secure user_refresh_rate "$USER_REFRESH_RATE" || [ "$quiet" = quiet ] || log "user_refresh_rate 写入失败"
   # 竖屏参数优先(面板原生 2400x3392), 失败换横屏试
   cmd display set-user-preferred-display-mode 2400 3392 "$REFRESH_PEAK" 2>/dev/null
   um=$(cmd display get-user-preferred-display-mode 2>/dev/null)
@@ -77,9 +116,9 @@ apply_refresh(){
   esac
 }
 
-# ---- SF 层强切: 本机实测唯一有效硬手段 (ColorOS 策略层会把 render range 压回120) ----
-# v1.5.0: 守护进程内缓存解析结果(SF_ID); 补切后仍不达标才置空重解析(防 OTA 后 id 变化)。
-# grep 模式由 TARGET_HZ 拼接, 改目标档不再失配。once/status 是短命进程, 每次现解析。
+# ---- SF 1035 后备(默认关闭) ----
+# v1.5.2 实测: 本机 1035 为空操作(返回 Parcel(NULL), backdoor pid 始终 0, -1 为 Invalid argument),
+# 默认 SF_1035_ENABLE=0; 仅在其他 ROM/旧版本确认有效时开启。开启时仍缓存解析结果。
 SF_ID=""
 sf_mode_id(){
   if [ -n "$SF_ID" ]; then echo "$SF_ID"; return 0; fi
@@ -91,14 +130,17 @@ sf_mode_id(){
 sf_apply(){
   sid=$(sf_mode_id)
   service call SurfaceFlinger 1035 i32 "$sid" >/dev/null 2>&1
-  log "SF 1035 强切 mode $sid"
+  log "SF 1035 强切 mode $sid (实验开关)"
 }
 
 verify_and_fix(){
-  hz=$(render_hz)
+  hz=$(render_hz); mid=$(mode_id); ch=$(refresh_changeable)
   if [ "$hz" != "$TARGET_HZ" ]; then
-    log "实测 ${hz:-?}Hz != ${TARGET_HZ}Hz, 补 SF 强切"
-    sf_apply
+    log "实测 ${hz:-?}Hz != ${TARGET_HZ}Hz (mode=${mid:-?} changeable=${ch:-?})"
+    if [ "$ch" = "false" ]; then
+      log "固定刷新率模式: 设置→显示与亮度→屏幕刷新率 选「智能切换」; 或把 REFRESH_MIN 改为 120/10"
+    fi
+    [ "$SF_1035_ENABLE" = "1" ] && sf_apply
   fi
 }
 
@@ -177,12 +219,12 @@ do_apply(){
   save_backup
   apply_refresh
   apply_touch
-  sf_apply
+  [ "$SF_1035_ENABLE" = "1" ] && sf_apply
   discover
   # 每次开机/手动应用都留一条策略快照, 排查时不用再猜"是副本错了还是没挂上"
   pv=$(policy_rate "$POLICY_SRC"); pmv=$(policy_rate "$MODDIR/my_product/etc/refresh_rate_config.xml")
   log "策略: 活文件=${pv:-none} 副本=${pmv:-none} (144 档应为 maxrefreshsettings=\"4\")"
-  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level)"
+  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz mode=$(mode_id) changeable=$(refresh_changeable) sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level)"
 }
 
 alive(){
@@ -192,18 +234,17 @@ alive(){
   [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "apply.sh" "/proc/$p/cmdline" 2>/dev/null
 }
 
-# ---- 看门狗(v1.5.0): 单职责盯实测帧率 ----
-# 亮屏稳态 WATCH_INTERVAL(默认10s) 只查 render_hz; 漂移立即补 SF + 2s 复查确认;
-# 连续失败退避 10→20→40→60s 封顶, 成功回稳态; 同因日志限频(每分钟≤1条);
-# 灭屏 20s 长睡。settings/gs 纠偏已全部移除(ColorOS 改写 settings 属正常;
-# 触控走持久档位, v2 栈亮屏自恢复, 无需维护)。
+# ---- 看门狗(v1.5.2): 验实测/模式/可切换性, 漂移时重写 refresh 设置 ----
+# 亮屏稳态 WATCH_INTERVAL(默认10s) 只查 render_hz; 漂移先重写 min/peak(可切换范围)
+# 触发系统重新 modeset, 2s 后复查; 1035 默认关闭(本机实测空操作)。连续失败退避
+# 10→20→40→60s 封顶, 成功回稳态; 同因日志限频(每分钟≤1条); 灭屏 20s 长睡。
 watch(){
   if alive; then
     log "守护进程已存在(PID $(cat "$PIDF")), 本实例退出"
     exit 0
   fi
   echo $$ >"$PIDF"
-  log "看门狗启动 (稳态 ${WATCH_INTERVAL}s, 退避封顶 60s)"
+  log "看门狗启动 (稳态 ${WATCH_INTERVAL}s, 退避封顶 60s, SF1035=${SF_1035_ENABLE})"
   fails=0
   last_log=0
   while :; do
@@ -219,10 +260,11 @@ watch(){
         fails=$((fails+1))
         now=$(date +%s)
         if [ $((now - last_log)) -ge 60 ]; then
-          log "漂移: 实测 ${hz:-?}Hz != ${TARGET_HZ}Hz, 补 SF (连续第 $fails 次)"
+          log "漂移: 实测 ${hz:-?}Hz != ${TARGET_HZ}Hz (mode=$(mode_id) changeable=$(refresh_changeable)), 重写刷新设置 (连续第 $fails 次)"
           last_log=$now
         fi
-        sf_apply
+        apply_refresh quiet
+        [ "$SF_1035_ENABLE" = "1" ] && sf_apply
         sleep 2
         hz2=$(render_hz)
         if [ "$hz2" = "$TARGET_HZ" ]; then
@@ -230,8 +272,8 @@ watch(){
           fails=0
           sleep "$WATCH_INTERVAL"
         else
-          # 补切后仍不达标: 可能是 OTA 后 mode id 变了, 清缓存下轮重解析
-          SF_ID=""
+          # 仍不达标: 若启用了 1035, 清缓存下轮重解析(防 OTA 后 id 变化)
+          [ "$SF_1035_ENABLE" = "1" ] && SF_ID=""
           back=$((WATCH_INTERVAL * fails))
           [ "$back" -gt 60 ] && back=60
           sleep "$back"
@@ -306,6 +348,9 @@ case "$1" in
     # v1.5.0 追加: 触控持久档位当前值(chosen 档读出; 空=节点不存在或不可读)
     echo "touch_sensitive=$(tp_level sensitive_level)"
     echo "touch_smooth=$(tp_level smooth_level)"
+    # v1.5.2 追加: 系统是否允许切换刷新率(固定模式会卡 120); SF 1035 实验开关
+    echo "refresh_changeable=$(refresh_changeable)"
+    echo "sf_1035=${SF_1035_ENABLE:-0}"
     ;;
   *)
     echo "用法: sh apply.sh boot|daemon|once|status"

@@ -695,6 +695,7 @@
     const policyVal = parsePolicy(data.policy);
     const touchOn = data.touch_switch !== '0';
     const gameSwitch = (data.game_switch || '').trim();
+    const changeable = (data.refresh_changeable || '').toLowerCase();
     const stale = !!opts.stale;
 
     let daemonTone;
@@ -730,10 +731,16 @@
       refreshTone = 'muted';
       refreshText = hz + ' Hz';
       refreshDetail = '模块已禁用 · 目标 ' + target + ' Hz';
+    } else if (hz !== target && changeable === 'false') {
+      // v1.5.2: 本机实测 min=peak=144 会让 ColorOS 进入固定刷新率模式, 亮屏后卡 120
+      refreshTone = 'warn';
+      refreshText = hz + ' Hz';
+      refreshDetail = '固定刷新率模式 · 设置→显示与亮度→刷新率选「智能切换」';
     } else {
       refreshTone = hz === target ? 'good' : 'bad';
       refreshText = hz + ' Hz';
-      refreshDetail = '目标 ' + target + ' Hz' + (mode == null ? '' : ' · 显示档位 ' + mode);
+      refreshDetail = '目标 ' + target + ' Hz' + (mode == null ? '' : ' · 显示档位 ' + mode) +
+        (changeable === 'false' ? ' · 固定模式（建议智能切换）' : '');
     }
     setCard('refresh', refreshTone, refreshText, refreshDetail);
 
@@ -759,7 +766,7 @@
     } else if (runtimeOnly) {
       policyTone = 'muted';
       policyText = '运行时方案';
-      policyDetail = '策略覆盖未生效，SF+看门狗锁 ' + target + ' Hz 中';
+      policyDetail = '策略覆盖未生效，运行时由 peak=144 / min=120 + 看门狗兜底';
     } else if (policyVal == null) {
       policyTone = 'warn';
       policyText = '未知';
