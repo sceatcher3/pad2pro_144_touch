@@ -1,5 +1,7 @@
 #!/system/bin/sh
 # customize.sh — 安装器(KSU/Magisk 通用)
+# v1.6.0: 策略副本补齐 defaultRateId/defaultMaxRate/enableWinOverride 并校验后才落盘
+#   (校验规则必须与 post-fs-data.sh 的 validate_copy 保持一致)
 # v1.5.0: 安装输出只留结果行(删历史 changelog); 挂载完全交给元模块, 本脚本只生成策略覆盖副本
 MODDIR=${MODPATH:-${MODDIR:-${0%/*}}}
 
@@ -16,27 +18,50 @@ set_perm "$MODDIR/action.sh"        0 0 0755
 set_perm "$MODDIR/uninstall.sh"     0 0 0755
 set_perm "$MODDIR/post-fs-data.sh"  0 0 0755
 
+attr(){ grep -o "$1=\"[^\"]*\"" "$2" 2>/dev/null | tail -n 1 | cut -d'"' -f2; }
+cnt(){ grep -o "$1" "$2" 2>/dev/null | wc -l | tr -d ' '; }
+
 # ---- 生成策略覆盖副本, 交给元模块合并; 本模块不自挂载(v1.5.0) ----
 OVSRC=/my_product/etc/refresh_rate_config.xml
 if [ -f "$MODDIR/config.conf" ]; then
   . "$MODDIR/config.conf" 2>/dev/null
+  R=${POLICY_RATE:-4}
+  DM=${POLICY_DEFAULT_MAX_RATE:-144}
+  WIN=${POLICY_WIN_OVERRIDE:-all}
   if [ "${POLICY_ENABLE:-1}" != "1" ]; then
     rm -rf "$MODDIR/my_product"
     ui_print "- 策略覆盖已关闭(POLICY_ENABLE=0, 纯运行时方案)"
   elif [ -f "$OVSRC" ]; then
-    R=${POLICY_RATE:-4}
     mkdir -p "$MODDIR/my_product/etc"
     DST=$MODDIR/my_product/etc/refresh_rate_config.xml
     TMP=$MODDIR/my_product/etc/.refresh_rate_config.new
-    sed -E "s/rateId=\"([0-9]+)-([0-9]+)-([0-9]+)-([0-9]+)\"/rateId=\"$R-\2-\3-$R\"/g; s/maxrefreshsettings=\"[0-9]+\"/maxrefreshsettings=\"$R\"/g" "$OVSRC" > "$TMP"
+    EXPR="s/defaultRateId=\"([0-9]+)-([0-9]+)-([0-9]+)-([0-9]+)\"/defaultRateId=\"$R-\2-\3-$R\"/g"
+    EXPR="$EXPR; s/rateId=\"([0-9]+)-([0-9]+)-([0-9]+)-([0-9]+)\"/rateId=\"$R-\2-\3-$R\"/g"
+    EXPR="$EXPR; s/maxrefreshsettings=\"[0-9]+\"/maxrefreshsettings=\"$R\"/g"
+    [ -n "$DM" ] && EXPR="$EXPR; s/ defaultMaxRate=\"[0-9.]*\"//g; s/<config /<config defaultMaxRate=\"$DM\" /"
+    [ "$WIN" = "all" ] && EXPR="$EXPR; s/ enableWinOverride=\"[a-z]*\"//g; s|<item ([^>]*[^ /]) */>|<item \1 enableWinOverride=\"false\" />|g"
+    sed -E "$EXPR" "$OVSRC" >"$TMP"
+    bad=""
     if [ -s "$TMP" ]; then
-      cat "$TMP" > "$DST"   # 原地写, 不换 inode(旧副本可能正被元模块合并)
+      [ "$(attr maxrefreshsettings "$TMP")" = "$R" ] || bad="$bad rateId"
+      if [ -n "$DM" ] && [ "$(attr defaultMaxRate "$TMP")" != "$DM" ]; then bad="$bad defaultMaxRate"; fi
+      dri=$(attr defaultRateId "$TMP")
+      if [ -n "$dri" ] && ! echo "$dri" | grep -qE "^$R-[0-9]+-[0-9]+-$R$"; then bad="$bad defaultRateId"; fi
+      if [ "$WIN" = "all" ]; then
+        items=$(cnt '<item ' "$TMP"); wf=$(cnt 'enableWinOverride="false"' "$TMP")
+        if [ "$items" -eq 0 ] || [ "$wf" != "$items" ]; then bad="$bad winOverride=$wf/$items"; fi
+      fi
+    else
+      bad="sed 输出为空"
+    fi
+    if [ -z "$bad" ]; then
+      cat "$TMP" >"$DST"   # 原地写, 不换 inode(旧副本可能正被元模块合并)
       rm -f "$TMP"
       set_perm "$DST" 0 0 0644
-      ui_print "- 策略覆盖副本已生成(maxrefreshsettings->$R), 由元模块合并生效"
+      ui_print "- 策略副本已生成并通过校验(rate $R, defaultMaxRate=${DM:-none}, winOverride=$WIN)"
     else
       rm -f "$TMP"
-      ui_print "! 策略覆盖副本生成失败(开机时 post-fs-data.sh 会再试)"
+      ui_print "! 策略副本校验失败 [$bad], 保留旧副本(开机时 post-fs-data.sh 会再试)"
     fi
   fi
 fi

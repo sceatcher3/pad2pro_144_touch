@@ -1,15 +1,16 @@
 #!/system/bin/sh
 # uninstall.sh — 还原备份并清理
+# v1.6.0: 同时停触控守护(guard.pid)
 # v1.5.0: 还原本模块真正改过的东西(settings 四键 + sensitive/smooth 档位);
 #   旧版 backup.conf 里的 game_switch 行兼容还原(升级用户), 新备份不再含它。
 MODDIR=${0%/*}
 DATA=/data/adb/p2p144
 BK=$DATA/backup.conf
 
-# 停看门狗
-if [ -f "$DATA/daemon.pid" ]; then
-  kill "$(cat "$DATA/daemon.pid" 2>/dev/null)" 2>/dev/null
-fi
+# 停看门狗 + 触控守护(v1.6.0 两个独立进程)
+for f in "$DATA/daemon.pid" "$DATA/guard.pid"; do
+  [ -f "$f" ] && kill "$(cat "$f" 2>/dev/null)" 2>/dev/null
+done
 
 if [ -f "$BK" ]; then
   . "$BK"

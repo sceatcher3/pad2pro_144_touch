@@ -1,6 +1,6 @@
 id=pad2pro_144_touch
 name=Pad 2 Pro 144Hz Fix & TouchTune
-version=1.5.2
-versionCode=15
+version=1.6.1
+versionCode=17
 author=Sceatcher3
-description=一加 Pad 2 Pro (OPD2413) 144Hz 修复+触控优化: 策略副本交元模块合并, peak=144/min=120 保持可切换, 退避看门狗, 触控持久档位零拉锯, 只读 WebUI(状态/日志导出), 卸载自动还原.
+description=一加 Pad 2 Pro (OPD2413) 144Hz 修复+触控优化: 策略副本补 defaultMaxRate/enableWinOverride 交元模块合并, peak=144/min=120 保持可切换, 退避看门狗 + 触控守护(档位/游戏模式回写), 只读 WebUI(两卡状态/日志导出), 卸载自动还原.

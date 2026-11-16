@@ -72,13 +72,7 @@
     margin: 4px 0 0;
     color: var(--muted);
     font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .refresh-state { color: var(--muted); }
-  .refresh-state.busy { color: var(--accent); }
-  .refresh-state.error { color: var(--bad); }
   .badge {
     flex: none;
     padding: 6px 10px;
@@ -156,12 +150,6 @@
     border-radius: var(--radius);
     background: linear-gradient(180deg, var(--surface), var(--bg-soft));
   }
-  .export-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-  }
-  .export-actions button { flex: 1; min-width: 0; }
   .card-head {
     display: flex;
     align-items: center;
@@ -201,6 +189,14 @@
   .card.tone-bad .card-value { color: var(--bad); }
   .card.tone-muted .dot { background: var(--muted); }
   .card.tone-muted .card-value { color: var(--muted); }
+  .env-line {
+    margin: 10px 2px 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .env-line.warn { color: var(--warn); }
   button {
     font: inherit;
     color: inherit;
@@ -228,6 +224,12 @@
     border-radius: var(--radius);
     background: linear-gradient(180deg, var(--surface), var(--bg-soft));
   }
+  .export-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .export-actions button { flex: 1; min-width: 0; }
   .export-head {
     display: flex;
     align-items: center;
@@ -236,16 +238,7 @@
     font-size: 12px;
     letter-spacing: .04em;
   }
-  .export p {
-    margin: 8px 0 0;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-  }
-
   .logstat {
-    margin-top: 10px;
     font-family: var(--mono);
     font-size: 12px;
     color: var(--muted);
@@ -259,7 +252,6 @@
   }
   .logstat .name { color: var(--text); }
   .logstat .val { flex: 0 1 auto; min-width: 0; text-align: right; overflow-wrap: anywhere; }
-  .muted { color: var(--muted); }
   .toast {
     position: fixed;
     left: 50%;
@@ -349,7 +341,7 @@
   <header class="topbar">
     <div class="brand">
       <h1>144Hz Fix &amp; TouchTune</h1>
-      <p><span id="moduleVersion">v—</span> · <span id="refreshState" class="refresh-state">等待</span></p>
+      <p><span id="moduleVersion">v—</span></p>
     </div>
     <span id="overallBadge" class="badge muted">读取中</span>
   </header>
@@ -369,30 +361,22 @@
       </div>
 
       <div class="cards">
-        <article class="card tone-muted" id="daemonCard">
-          <div class="card-head"><span class="dot"></span><span>看门狗</span></div>
-          <div class="card-value" id="daemonValue">读取中…</div>
-          <div class="card-detail" id="daemonDetail">—</div>
-        </article>
         <article class="card tone-muted" id="refreshCard">
           <div class="card-head"><span class="dot"></span><span>实测刷新率</span></div>
           <div class="card-value" id="refreshValue">读取中…</div>
           <div class="card-detail" id="refreshDetail">—</div>
         </article>
-        <article class="card tone-muted" id="policyCard">
-          <div class="card-head"><span class="dot"></span><span>策略覆盖</span></div>
-          <div class="card-value" id="policyValue">读取中…</div>
-          <div class="card-detail" id="policyDetail">—</div>
-        </article>
         <article class="card tone-muted" id="touchCard">
-          <div class="card-head"><span class="dot"></span><span>触控优化</span></div>
+          <div class="card-head"><span class="dot"></span><span>触控档位</span></div>
           <div class="card-value" id="touchValue">读取中…</div>
           <div class="card-detail" id="touchDetail">—</div>
         </article>
       </div>
 
-      <section class="export" aria-labelledby="exportTitle">
-        <div class="export-head"><span class="dot"></span><span id="exportTitle">诊断与导出</span></div>
+      <p id="envLine" class="env-line">—</p>
+
+      <section class="export" aria-label="诊断与导出">
+        <div class="export-head"><span class="dot"></span><span>诊断与导出</span></div>
         <div class="logstat">
           <div><span class="name">p2p.log</span><span class="val" id="statP2p">—</span></div>
           <div><span class="name">post_fs.log</span><span class="val" id="statPostFs">—</span></div>
@@ -401,7 +385,6 @@
           <button type="button" id="exportBtn" class="primary">导出日志</button>
           <button type="button" id="copyStatus">复制状态</button>
         </div>
-        <p id="exportHint">含状态、策略、两份日志（本次开机起）· 写入 Download/</p>
       </section>
     </section>
   </main>
@@ -435,8 +418,6 @@
   const EXPORT_TIMEOUT = 25000;
   const TOAST_MS = 2800;
   const TOAST_LONG_MS = 5000;
-  const EXPORT_HINT = '含状态、策略、两份日志（本次开机起）· 写入 Download/';
-  const EXPORT_HINT_NO_BRIDGE = '需要在内核管理器 WebView 中打开才能导出。';
 
   const LOG_ROWS = [
     { id: 'statP2p', file: 'p2p.log' },
@@ -444,9 +425,7 @@
   ];
 
   const CARD_IDS = {
-    daemon: { card: 'daemonCard', value: 'daemonValue', detail: 'daemonDetail' },
     refresh: { card: 'refreshCard', value: 'refreshValue', detail: 'refreshDetail' },
-    policy: { card: 'policyCard', value: 'policyValue', detail: 'policyDetail' },
     touch: { card: 'touchCard', value: 'touchValue', detail: 'touchDetail' }
   };
 
@@ -474,15 +453,13 @@
 
   function cacheEls() {
     [
-      'moduleVersion', 'refreshState', 'overallBadge',
+      'moduleVersion', 'overallBadge',
       'notice', 'noticeText', 'retryBtn',
       'disabledBanner', 'statusError', 'refreshStatusBtn',
-      'daemonCard', 'daemonValue', 'daemonDetail',
       'refreshCard', 'refreshValue', 'refreshDetail',
-      'policyCard', 'policyValue', 'policyDetail',
       'touchCard', 'touchValue', 'touchDetail',
-      'statP2p', 'statPostFs', 'exportBtn', 'exportHint',
-      'copyStatus', 'lastRefresh',
+      'envLine', 'statP2p', 'statPostFs',
+      'exportBtn', 'copyStatus', 'lastRefresh',
       'toast', 'copyModal', 'copyFallbackText', 'closeCopyModal'
     ].forEach((id) => { el[id] = $(id); });
   }
@@ -594,7 +571,7 @@
       const i = line.indexOf('=');
       if (i > 0) {
         const key = line.slice(0, i).trim();
-        // apply.sh 的 status 把 peak/min 放在同一行：peak=144.0 min=144.0
+        // apply.sh 的 status 把 peak/min 放在同一行：peak=144.0 min=120.0
         if (key === 'peak') {
           const pair = line.match(/^\s*peak=(.*?)\s+min=(.*)$/);
           if (pair) {
@@ -614,11 +591,6 @@
     return m ? Number(m[0]) : null;
   }
 
-  function parseMode(value) {
-    const m = String(value || '').match(/mActiveModeId=(\d+)/);
-    return m ? Number(m[1]) : null;
-  }
-
   function parsePolicy(value) {
     const m = String(value || '').match(/maxrefreshsettings="?(\d+)"?/);
     return m ? Number(m[1]) : null;
@@ -636,20 +608,6 @@
   function setOverall(tone, text) {
     el.overallBadge.className = 'badge ' + tone;
     el.overallBadge.textContent = text;
-  }
-
-  function setRefreshState(mode) {
-    const node = el.refreshState;
-    node.className = 'refresh-state ' + mode;
-    if (mode === 'busy') {
-      node.textContent = '更新中…';
-    } else if (mode === 'error') {
-      node.textContent = '更新失败';
-    } else if (mode === 'ok') {
-      node.textContent = state.lastGood ? '更新于 ' + timeStr(state.lastGood) : '已更新';
-    } else {
-      node.textContent = '等待';
-    }
   }
 
   function showBanner(id, text) {
@@ -683,6 +641,16 @@
     }, ms || TOAST_MS);
   }
 
+  function policyLine(data, policyVal, complete, policyOn, disabled) {
+    if (disabled) return '策略停止维护';
+    if (!policyOn) return '策略覆盖已关闭';
+    if (policyVal === 4) {
+      return complete === '1' ? '策略已生效' : '策略属性不全';
+    }
+    if (data.policy_source === 'runtime-only') return '策略未接管（运行时方案）';
+    return '策略未生效';
+  }
+
   function renderStatus(opts) {
     opts = opts || {};
     const data = state.statusData || {};
@@ -690,43 +658,21 @@
     const daemon = data.daemon || 'unknown';
     const target = Number(data.target_hz || 144) || 144;
     const hz = parseHz(data.render);
-    const mode = parseMode(data.mode_active);
     const policyOn = data.policy_enable !== '0';
     const policyVal = parsePolicy(data.policy);
+    const complete = (data.policy_complete || '').trim();
     const touchOn = data.touch_switch !== '0';
-    const gameSwitch = (data.game_switch || '').trim();
     const changeable = (data.refresh_changeable || '').toLowerCase();
     const stale = !!opts.stale;
 
-    let daemonTone;
-    let daemonText;
-    let daemonDetail;
-    if (disabled) {
-      daemonTone = 'muted';
-      daemonText = '已禁用';
-      daemonDetail = '模块已禁用 · ' + (daemon === 'alive' ? 'daemon 仍在运行（重启后停止）' : '守护不会启动');
-    } else if (daemon === 'alive') {
-      daemonTone = 'good';
-      daemonText = '运行中';
-      daemonDetail = '亮屏自动巡检，漂移即纠偏';
-    } else if (daemon === 'dead') {
-      daemonTone = 'bad';
-      daemonText = '未运行';
-      daemonDetail = '重启后约 10 秒自动启动，或点模块卡「操作」';
-    } else {
-      daemonTone = 'muted';
-      daemonText = '未知';
-      daemonDetail = '状态字段缺失，请更新模块';
-    }
-    setCard('daemon', daemonTone, daemonText, daemonDetail);
-
+    // ---- 刷新率卡 ----
     let refreshTone;
     let refreshText;
     let refreshDetail;
     if (hz == null) {
       refreshTone = 'warn';
       refreshText = '读取失败';
-      refreshDetail = '目标 ' + target + ' Hz · render=' + (data.render || '—');
+      refreshDetail = '目标 ' + target + ' Hz · 显示状态读取失败';
     } else if (disabled) {
       refreshTone = 'muted';
       refreshText = hz + ' Hz';
@@ -739,84 +685,93 @@
     } else {
       refreshTone = hz === target ? 'good' : 'bad';
       refreshText = hz + ' Hz';
-      refreshDetail = '目标 ' + target + ' Hz' + (mode == null ? '' : ' · 显示档位 ' + mode) +
+      refreshDetail = '目标 ' + target + ' Hz' +
         (changeable === 'false' ? ' · 固定模式（建议智能切换）' : '');
     }
     setCard('refresh', refreshTone, refreshText, refreshDetail);
 
-    let policyTone;
-    let policyText;
-    let policyDetail;
-    // v1.5.1: 策略卡结果导向——活文件=4 即「已生效」(不区分来源: 元模块合并或其他模块 bind);
-    // 未生效但实测帧率达标 → 中性「运行时方案」(SF+看门狗兜底, 不算异常)。
-    const runtimeOnly = data.policy_source === 'runtime-only' ||
-      (!data.policy_source && policyVal != null && policyVal !== 4 && hz === target);
-    if (disabled) {
-      policyTone = 'muted';
-      policyText = '已禁用';
-      policyDetail = '模块禁用，策略不再维护';
-    } else if (!policyOn) {
-      policyTone = 'muted';
-      policyText = '已关闭';
-      policyDetail = 'POLICY_ENABLE=0 · 纯运行时方案 · policy=' + (data.policy || '—');
-    } else if (policyVal === 4) {
-      policyTone = 'good';
-      policyText = '已生效';
-      policyDetail = '策略覆盖已生效，全局限 144 档';
-    } else if (runtimeOnly) {
-      policyTone = 'muted';
-      policyText = '运行时方案';
-      policyDetail = '策略覆盖未生效，运行时由 peak=144 / min=120 + 看门狗兜底';
-    } else if (policyVal == null) {
-      policyTone = 'warn';
-      policyText = '未知';
-      policyDetail = '策略状态读取失败';
-    } else {
-      policyTone = 'warn';
-      policyText = '未生效';
-      policyDetail = '策略仍为 ' + policyVal + ' 档（应为 4）· 实测 ' + (hz == null ? '读取失败' : hz + ' Hz');
-    }
-    setCard('policy', policyTone, policyText, policyDetail);
+    // ---- 触控卡: 目标 vs 实际 ----
+    const sens = (data.touch_sensitive || '').trim();
+    const smoo = (data.touch_smooth || '').trim();
+    const tSens = (data.touch_target_sensitive || '').trim();
+    const tSmoo = (data.touch_target_smooth || '').trim();
+    const guardMode = (data.touch_guard || '').trim();
+    const guardAlive = data.touch_daemon === 'alive';
+    const fallback = Number(data.touch_fallback || 0) || 0;
+    const wantSens = tSens !== '' && tSens !== '-1';
+    const wantSmoo = tSmoo !== '' && tSmoo !== '-1';
+    const sensOk = !wantSens || sens === tSens;
+    const smooOk = !wantSmoo || smoo === tSmoo;
+    const fallbackTxt = fallback > 0 ? ' · 已写回 ' + fallback + ' 次' : '';
+    const guardTxt = guardMode === 'log'
+      ? '仅记录（log）'
+      : (guardAlive ? '守护写回中' : '守护未运行');
 
     let touchTone;
     let touchText;
     let touchDetail;
-    // v1.5.0: 触控改持久档位(sensitive/smooth), 不再常驻写 game_switch。
-    // 卡片以档位为主; game_switch 只是系统/游戏助手当前状态, 降为参考信息, 不参与判定。
-    const sens = (data.touch_sensitive || '').trim();
-    const smoo = (data.touch_smooth || '').trim();
     if (disabled) {
       touchTone = 'muted';
       touchText = '已禁用';
-      touchDetail = '模块禁用，触控优化不再维护';
+      touchDetail = '模块禁用，触控档位不再维护';
     } else if (!touchOn) {
       touchTone = 'muted';
       touchText = '已关闭';
       touchDetail = '配置中档位优化已关闭';
-    } else if (sens || smoo) {
-      touchTone = 'good';
-      touchText = '灵敏度 ' + (sens || '—') + ' · 平滑 ' + (smoo || '—');
-      touchDetail = '持久档位已写入，亮屏自动保持';
-    } else if (data.touch_sensitive == null && data.touch_smooth == null) {
-      // 旧版 apply.sh 没有档位字段: 回退到 game_switch 展示
-      if (gameSwitch === '1') {
-        touchTone = 'good';
-        touchText = '通道已开';
-        touchDetail = '旧版游戏触控通道生效中';
-      } else {
-        touchTone = 'warn';
-        touchText = '读取失败';
-        touchDetail = '触控状态字段缺失，请更新模块';
-      }
-    } else {
+    } else if (!sens && !smoo) {
       touchTone = 'warn';
       touchText = '节点缺失';
       touchDetail = '触控节点不可读，仅 IRQ 亲和性生效';
+    } else if (!wantSens && !wantSmoo) {
+      touchTone = 'muted';
+      touchText = '未设置';
+      touchDetail = '两个档位都是 -1（本模块不碰）';
+    } else if (sensOk && smooOk) {
+      touchTone = 'good';
+      touchText = (wantSens ? '灵敏度 ' + sens : '') +
+        (wantSens && wantSmoo ? ' · ' : '') +
+        (wantSmoo ? '平滑 ' + smoo : '');
+      touchDetail = guardTxt + fallbackTxt;
+    } else {
+      touchTone = 'warn';
+      touchText = (wantSens ? '灵敏度 ' + (sens || '—') : '') +
+        (wantSens && wantSmoo ? ' · ' : '') +
+        (wantSmoo ? '平滑 ' + (smoo || '—') : '');
+      touchDetail = '目标 ' + (wantSens ? tSens : '—') + ' / ' + (wantSmoo ? tSmoo : '—') +
+        ' · ' + guardTxt + fallbackTxt;
     }
     setCard('touch', touchTone, touchText, touchDetail);
 
+    // ---- 看门狗 / 策略: 压成一行小字 ----
+    let daemonTone;
+    if (disabled) {
+      daemonTone = 'muted';
+    } else if (daemon === 'alive') {
+      daemonTone = 'good';
+    } else if (daemon === 'dead') {
+      daemonTone = 'bad';
+    } else {
+      daemonTone = 'muted';
+    }
+    let policyTone;
+    if (disabled || !policyOn) {
+      policyTone = 'muted';
+    } else if (policyVal === 4 && complete === '1') {
+      policyTone = 'good';
+    } else if (policyVal === 4) {
+      policyTone = 'warn';
+    } else if (data.policy_source === 'runtime-only') {
+      policyTone = 'muted';
+    } else {
+      policyTone = 'warn';
+    }
+    const daemonTxt = disabled ? '看门狗停止' : (daemon === 'alive' ? '看门狗运行中' : (daemon === 'dead' ? '看门狗未运行' : '看门狗未知'));
+    el.envLine.textContent = daemonTxt + ' · ' + policyLine(data, policyVal, complete, policyOn, disabled);
+    el.envLine.className = 'env-line' + (daemonTone === 'bad' || policyTone === 'warn' ? ' warn' : '');
+
     el.disabledBanner.classList.toggle('hidden', !disabled);
 
+    // ---- 总徽章 ----
     const tones = [daemonTone, refreshTone, policyTone, touchTone];
     if (disabled) {
       setOverall('muted', '已禁用');
@@ -826,7 +781,7 @@
       setOverall('bad', '异常');
     } else if (tones.indexOf('warn') !== -1) {
       setOverall('warn', '注意');
-    } else if (daemonTone === 'good' && refreshTone === 'good') {
+    } else if (refreshTone === 'good') {
       setOverall('good', '正常');
     } else {
       setOverall('muted', '部分未知');
@@ -906,7 +861,6 @@
     if (state.statusBusy || !state.bridge || !state.moduleDir) return false;
     state.statusBusy = true;
     el.refreshStatusBtn.disabled = true;
-    setRefreshState('busy');
     let ok = false;
     try {
       const r = await execCmd('sh ' + shq(state.moduleDir + '/apply.sh') + ' status 2>&1; echo "__RC=$?"');
@@ -922,7 +876,6 @@
       state.lastGood = new Date();
       hideBanner('statusError');
       renderStatus();
-      setRefreshState('ok');
       ok = true;
     } catch (e) {
       state.statusStale = !!state.statusText;
@@ -930,13 +883,13 @@
       if (state.statusText) {
         renderStatus({ stale: true });
       } else {
-        ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+        ['refresh', 'touch'].forEach((key) => {
           setCard(key, 'muted', '读取失败', '—');
         });
+        el.envLine.textContent = '—';
         setOverall('bad', '异常');
         el.copyStatus.disabled = true;
       }
-      setRefreshState('error');
     } finally {
       state.statusBusy = false;
       el.refreshStatusBtn.disabled = false;
@@ -966,6 +919,7 @@
       'M=' + shq(state.moduleDir || ''),
       'V=' + shq(state.version || 'unknown'),
       'L=' + shq(DATA_DIR),
+      'P=/my_product/etc/refresh_rate_config.xml',
       'emit(){',
       '  echo "===== MODULE ====="',
       '  echo "version=$V"',
@@ -977,17 +931,17 @@
       '  sh "$M/apply.sh" status 2>&1',
       '  echo ""',
       '  echo "===== POLICY ====="',
-      "  printf 'live=%s\\n' \"$(grep -o 'maxrefreshsettings=\"[0-9]*\"' /my_product/etc/refresh_rate_config.xml 2>/dev/null | tail -n 1)\"",
+      "  printf 'live_src=%s\\n' \"$(awk '$0 ~ /refresh_rate_config.xml/ {print $4; exit}' /proc/self/mountinfo 2>/dev/null)\"",
+      "  printf 'live=%s\\n' \"$(grep -o 'maxrefreshsettings=\"[0-9]*\"' \"$P\" 2>/dev/null | tail -n 1)\"",
+      "  printf 'live_defaultMaxRate=%s\\n' \"$(grep -o 'defaultMaxRate=\"[^\"]*\"' \"$P\" 2>/dev/null | tail -n 1)\"",
+      "  printf 'live_winOverride_false=%s/%s\\n' \"$(grep -o 'enableWinOverride=\"false\"' \"$P\" 2>/dev/null | wc -l | tr -d ' ')\" \"$(grep -o '<item ' \"$P\" 2>/dev/null | wc -l | tr -d ' ')\"",
       "  printf 'module_copy=%s\\n' \"$(grep -o 'maxrefreshsettings=\"[0-9]*\"' \"$M/my_product/etc/refresh_rate_config.xml\" 2>/dev/null | tail -n 1)\"",
       '  echo ""',
-      '  echo "===== P2P.LOG ====="',
-      '  if [ -f "$L/p2p.log" ]; then cat "$L/p2p.log"; else echo "(不存在)"; fi',
+      '  echo "===== P2P.LOG (tail 200) ====="',
+      '  if [ -f "$L/p2p.log" ]; then tail -n 200 "$L/p2p.log"; else echo "(不存在)"; fi',
       '  echo ""',
-      '  echo "===== POST_FS.LOG ====="',
-      '  if [ -f "$L/post_fs.log" ]; then cat "$L/post_fs.log"; else echo "(不存在)"; fi',
-      '  echo ""',
-      '  echo "===== MOUNTINFO(refresh_rate) ====="',
-      '  grep refresh_rate /proc/self/mountinfo 2>/dev/null || echo "(无)"',
+      '  echo "===== POST_FS.LOG (tail 200) ====="',
+      '  if [ -f "$L/post_fs.log" ]; then tail -n 200 "$L/post_fs.log"; else echo "(不存在)"; fi',
       '}',
       'emit >"$F" 2>&1',
       'rc=$?',
@@ -1152,10 +1106,10 @@
     state.bridge = null;
     showNotice('请在 KernelSU / APatch 管理器中打开本页面。普通浏览器没有 root 执行桥，读不到模块状态，也无法导出日志。', 'warn', true);
     setOverall('muted', '需要管理器');
-    setRefreshState('wait');
-    ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+    ['refresh', 'touch'].forEach((key) => {
       setCard(key, 'muted', '—', '需要 KernelSU / APatch 管理器');
     });
+    el.envLine.textContent = '—';
     el.disabledBanner.classList.add('hidden');
     hideBanner('statusError');
     el.copyStatus.disabled = true;
@@ -1164,13 +1118,11 @@
     LOG_ROWS.forEach((row) => {
       if (el[row.id]) el[row.id].textContent = '—';
     });
-    el.exportHint.textContent = EXPORT_HINT_NO_BRIDGE;
   }
 
   async function init() {
     cacheEls();
     bindEvents();
-    el.exportHint.textContent = EXPORT_HINT;
     if (state.timer) {
       clearInterval(state.timer);
       state.timer = null;
@@ -1184,7 +1136,6 @@
     state.moduleDir = null;
     el.refreshStatusBtn.disabled = true;
     el.exportBtn.disabled = true;
-    setRefreshState('busy');
     try {
       const dir = await locateModule();
       if (!dir) throw new Error('未找到模块目录（' + FALLBACK_DIR + '）');
@@ -1198,8 +1149,7 @@
     } catch (e) {
       showNotice('初始化失败：' + humanError(e), 'bad', true);
       setOverall('bad', '异常');
-      setRefreshState('error');
-      ['daemon', 'refresh', 'policy', 'touch'].forEach((key) => {
+      ['refresh', 'touch'].forEach((key) => {
         setCard(key, 'muted', '无法读取', '—');
       });
     }

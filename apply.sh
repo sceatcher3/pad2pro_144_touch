@@ -1,5 +1,11 @@
 #!/system/bin/sh
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
+# v1.6.1: 新增 TOUCH_GAME_SWITCH(默认 1): 写 game_switch_enable=1(固件 GAME_ON),
+#   开机写一次 + 触控守护维护; -1=不碰. 本机 DTS 无 smooth/sensitive 联动, 只发固件命令.
+# v1.6.0: 策略副本配套 defaultMaxRate/enableWinOverride 校验(policy_complete);
+#   新增触控守护 apply.sh guard(1s 巡检, 回退即写回, 每分钟写回上限, log/off 可切);
+#   status 追加 policy_live_src/default_rate_id/default_max_rate/win_override/
+#   policy_complete/touch_target_*/touch_guard/touch_daemon/touch_fallback
 # v1.5.2: REFRESH_MIN 默认 120 (min=peak=144 会让 ColorOS 固定刷新率, 实测不再 modeset);
 #   settings 写入加 content/runcon 回退 + 回读校验; SF 1035 默认关闭(本机实测空操作);
 #   看门狗改验 mActiveModeId/mRefreshRateChangeable; status 追加 refresh_changeable/sf_1035
@@ -18,6 +24,8 @@ DATA=/data/adb/p2p144
 LOGF=$DATA/p2p.log
 BK=$DATA/backup.conf
 PIDF=$DATA/daemon.pid
+GUARDF=$DATA/guard.pid
+TOUCHF=$DATA/touch_fallback
 POLICY_SRC=/my_product/etc/refresh_rate_config.xml
 
 # ---- 读取配置 ----
@@ -30,7 +38,13 @@ SF_FALLBACK_ID=${SF_FALLBACK_ID:-6}
 SF_1035_ENABLE=${SF_1035_ENABLE:-0}
 TOUCH_SENSITIVE_LEVEL=${TOUCH_SENSITIVE_LEVEL:-4}
 TOUCH_SMOOTH_LEVEL=${TOUCH_SMOOTH_LEVEL:-1}
+TOUCH_GAME_SWITCH=${TOUCH_GAME_SWITCH:-1}
 TOUCH_IRQ_AFFINITY=${TOUCH_IRQ_AFFINITY:-auto}
+TOUCH_GUARD=${TOUCH_GUARD:-pin}
+TOUCH_GUARD_INTERVAL=${TOUCH_GUARD_INTERVAL:-1}
+TOUCH_GUARD_MAX_WRITES=${TOUCH_GUARD_MAX_WRITES:-6}
+POLICY_DEFAULT_MAX_RATE=${POLICY_DEFAULT_MAX_RATE:-144}
+POLICY_WIN_OVERRIDE=${POLICY_WIN_OVERRIDE:-all}
 WATCH_INTERVAL=${WATCH_INTERVAL:-10}
 TARGET_HZ=${TARGET_HZ:-144}
 
@@ -81,10 +95,40 @@ gs_state(){ sed 's/,.*//' /proc/touchpanel/game_switch_enable 2>/dev/null | tr -
 tp_level(){ cat "/proc/touchpanel/$1" 2>/dev/null | tr -d ' \n'; }
 # 策略文件里的截断开关(取最后一个是真正的总开关; 头部注释里那个是过时的)
 policy_rate(){ grep -o 'maxrefreshsettings="[0-9]*"' "$1" 2>/dev/null | tail -n 1; }
+# v1.6.0: 策略字段读取/校验(值与 post-fs-data.sh 的 validate_copy 口径一致)
+policy_attr(){ grep -o "$1=\"[^\"]*\"" "$2" 2>/dev/null | tail -n 1 | cut -d'"' -f2; }
+policy_count(){ grep -o "$1" "$2" 2>/dev/null | wc -l | tr -d ' '; }
+policy_src(){
+  line=$(grep 'refresh_rate_config.xml' /proc/self/mountinfo 2>/dev/null | head -n 1)
+  [ -n "$line" ] || { echo system; return 0; }
+  root=$(echo "$line" | awk '{print $4}')
+  case "$root" in
+    */modules/*/my_product/*) echo "$root" | sed 's|.*/modules/\([^/]*\)/.*|\1|' ;;
+    *) echo "${root:-unknown}" ;;
+  esac
+}
+# 活文件是否完整: rateId 目标档 + defaultMaxRate 目标Hz + (若存在)defaultRateId 首尾目标档 + 全部 item 关 winOverride
+policy_complete(){
+  [ -f "$POLICY_SRC" ] || { echo 0; return 0; }
+  ok=1
+  [ "$(policy_attr maxrefreshsettings "$POLICY_SRC")" = "${POLICY_RATE:-4}" ] || ok=0
+  if [ -n "${POLICY_DEFAULT_MAX_RATE:-144}" ]; then
+    [ "$(policy_attr defaultMaxRate "$POLICY_SRC")" = "$POLICY_DEFAULT_MAX_RATE" ] || ok=0
+  fi
+  dri=$(policy_attr defaultRateId "$POLICY_SRC")
+  if [ -n "$dri" ]; then
+    echo "$dri" | grep -qE "^${POLICY_RATE:-4}-[0-9]+-[0-9]+-${POLICY_RATE:-4}$" || ok=0
+  fi
+  if [ "${POLICY_WIN_OVERRIDE:-all}" = "all" ]; then
+    items=$(policy_count '<item ' "$POLICY_SRC"); wf=$(policy_count 'enableWinOverride="false"' "$POLICY_SRC")
+    if [ "$items" -eq 0 ] || [ "$wf" != "$items" ]; then ok=0; fi
+  fi
+  echo "$ok"
+}
 
 # ---- 备份原始值(仅首次) ----
-# v1.5.0: 不再备份 game_switch(本模块已不写它); 新增 sensitive/smooth 两档位。
-# 旧版 backup.conf 里的 game_switch 行由 uninstall.sh 兼容还原。
+# v1.6.1: 重新备份 game_switch(本模块在 TOUCH_GAME_SWITCH != -1 时会写它)
+# 旧版 backup.conf 没有这一行: 卸载时不会碰 game_switch(升级用户兼容)
 save_backup(){
   [ -f "$BK" ] && return 0
   mkdir -p "$DATA"
@@ -95,6 +139,7 @@ save_backup(){
     echo "user_refresh=$(setting_get secure user_refresh_rate)"
     echo "sensitive=$(tp_level sensitive_level)"
     echo "smooth=$(tp_level smooth_level)"
+    echo "game_switch=$(gs_state)"
   } >"$BK"
   log "已备份原始设置 -> $BK"
 }
@@ -194,10 +239,129 @@ touch_level_write(){
     log "$node 写入失败(want=$want)"
   fi
 }
+# v1.6.1: 游戏模式开关. 节点内容形如 "0, high_frame_support:0,...", 首字段才是开关;
+# 不能用 tp_level 比较. 本机 DTS 无 smooth/sensitive 联动, 写非 0 只发固件 GAME_ON.
+touch_gs_write(){
+  [ "$TOUCH_GAME_SWITCH" = "-1" ] && return 0
+  path=/proc/touchpanel/game_switch_enable
+  if [ ! -f "$path" ]; then
+    log "game_switch_enable 不存在, 跳过 (OTA 可能换了触控栈)"
+    return 0
+  fi
+  cur=$(gs_state)
+  if [ "$cur" = "$TOUCH_GAME_SWITCH" ]; then
+    log "game_switch_enable 已是 $TOUCH_GAME_SWITCH, 跳过"
+    return 0
+  fi
+  if echo "$TOUCH_GAME_SWITCH" >"$path" 2>/dev/null; then
+    log "game_switch_enable ${cur:-?}->$TOUCH_GAME_SWITCH"
+  else
+    log "game_switch_enable 写入失败(want=$TOUCH_GAME_SWITCH)"
+  fi
+}
 apply_touch(){
   touch_level_write sensitive_level "$TOUCH_SENSITIVE_LEVEL"
   touch_level_write smooth_level "$TOUCH_SMOOTH_LEVEL"
+  touch_gs_write
   touch_irq_affinity
+}
+
+# ---- 触控守护(v1.6.0): 独立进程, 不进刷新看门狗(单职责) ----
+# 真机证据: 模块开机写入 4/1 后, 30 秒采样 sens/smooth 全是 0(ColorOS 改回厂商默认).
+# 每个亮屏 tick 读档位, 不等于目标就写回并回读; 每分钟写回超过上限退避到下一分钟,
+# 同因日志每分钟 ≤1 条, 避免和系统形成 1s 拉锯刷屏。
+guard_alive(){
+  [ -f "$GUARDF" ] || return 1
+  p=$(cat "$GUARDF" 2>/dev/null)
+  [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "apply.sh" "/proc/$p/cmdline" 2>/dev/null \
+    && grep -q "guard" "/proc/$p/cmdline" 2>/dev/null
+}
+GT=""
+glog(){
+  now=$(date +%s)
+  [ $((now - ${GT:-0})) -lt 60 ] && return 0
+  GT=$now
+  log "触控守护: $*"
+}
+touch_guard(){
+  case "${TOUCH_GUARD:-pin}" in
+    off) log "TOUCH_GUARD=off, 触控守护不启动"; exit 0 ;;
+  esac
+  if [ "$TOUCH_SENSITIVE_LEVEL" = "-1" ] && [ "$TOUCH_SMOOTH_LEVEL" = "-1" ]; then
+    log "两个触控档位都是 -1, 触控守护不启动"
+    exit 0
+  fi
+  if guard_alive; then
+    log "触控守护已存在(PID $(cat "$GUARDF")), 本实例退出"
+    exit 0
+  fi
+  echo $$ >"$GUARDF"
+  echo 0 >"$TOUCHF" 2>/dev/null
+  log "触控守护启动 (mode=$TOUCH_GUARD 间隔=${TOUCH_GUARD_INTERVAL}s 上限=${TOUCH_GUARD_MAX_WRITES}/min)"
+  tick=0; on=1; writes=0; bucket=0; fallback=0
+  while :; do
+    # 亮屏判断不必每秒 dumpsys: 每 10 tick(≈10s) 刷新一次
+    if [ $((tick % 10)) -eq 0 ]; then
+      if screen_on; then on=1; else on=0; fi
+    fi
+    if [ "$on" = "1" ]; then
+      now=$(date +%s)
+      if [ $((now / 60)) -gt "$bucket" ]; then bucket=$((now / 60)); writes=0; fi
+      for pair in "sensitive_level:$TOUCH_SENSITIVE_LEVEL" "smooth_level:$TOUCH_SMOOTH_LEVEL"; do
+        node=${pair%%:*}; want=${pair#*:}
+        [ "$want" = "-1" ] && continue
+        cur=$(tp_level "$node")
+        [ "$cur" = "$want" ] && continue
+        if [ "$TOUCH_GUARD" = "log" ]; then
+          fallback=$((fallback + 1))
+          echo "$fallback" >"$TOUCHF" 2>/dev/null
+          glog "回退(仅记录): $node ${cur:-?}->$want"
+          continue
+        fi
+        if [ "$writes" -ge "$TOUCH_GUARD_MAX_WRITES" ]; then
+          glog "回退持续, 已达每分钟 ${TOUCH_GUARD_MAX_WRITES} 次上限, 本分钟不再写"
+          continue
+        fi
+        if echo "$want" >"/proc/touchpanel/$node" 2>/dev/null; then
+          writes=$((writes + 1))
+          fallback=$((fallback + 1))
+          echo "$fallback" >"$TOUCHF" 2>/dev/null
+          got=$(tp_level "$node")
+          if [ "$got" = "$want" ]; then
+            glog "已写回: $node ${cur:-?}->$want"
+          else
+            glog "写回未生效: $node want=$want got=${got:-?}"
+          fi
+        else
+          glog "写回失败: $node want=$want (节点不可写)"
+        fi
+      done
+      # 游戏模式(v1.6.1): 系统改回 0 时按同一上限写回; -1=不碰
+      if [ "$TOUCH_GAME_SWITCH" != "-1" ]; then
+        gcur=$(gs_state)
+        if [ -n "$gcur" ] && [ "$gcur" != "$TOUCH_GAME_SWITCH" ]; then
+          if [ "$TOUCH_GUARD" = "log" ]; then
+            fallback=$((fallback + 1)); echo "$fallback" >"$TOUCHF" 2>/dev/null
+            glog "游戏模式回退(仅记录): ${gcur}->$TOUCH_GAME_SWITCH"
+          elif [ "$writes" -ge "$TOUCH_GUARD_MAX_WRITES" ]; then
+            glog "游戏模式回退持续, 已达每分钟 ${TOUCH_GUARD_MAX_WRITES} 次上限"
+          elif echo "$TOUCH_GAME_SWITCH" >/proc/touchpanel/game_switch_enable 2>/dev/null; then
+            writes=$((writes + 1)); fallback=$((fallback + 1)); echo "$fallback" >"$TOUCHF" 2>/dev/null
+            glog "游戏模式已写回: ${gcur}->$TOUCH_GAME_SWITCH"
+          else
+            glog "游戏模式写入失败(game_switch_enable 不可写)"
+          fi
+        fi
+      fi
+    fi
+    tick=$((tick + 1))
+    if [ "$on" = "0" ]; then
+      sleep 5
+      tick=0
+    else
+      sleep "$TOUCH_GUARD_INTERVAL"
+    fi
+  done
 }
 
 # ---- 只记录不盲写: 未知格式节点留给后续调参 ----
@@ -224,14 +388,16 @@ do_apply(){
   # 每次开机/手动应用都留一条策略快照, 排查时不用再猜"是副本错了还是没挂上"
   pv=$(policy_rate "$POLICY_SRC"); pmv=$(policy_rate "$MODDIR/my_product/etc/refresh_rate_config.xml")
   log "策略: 活文件=${pv:-none} 副本=${pmv:-none} (144 档应为 maxrefreshsettings=\"4\")"
-  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz mode=$(mode_id) changeable=$(refresh_changeable) sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level)"
+  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz mode=$(mode_id) changeable=$(refresh_changeable) sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level) gs=$(gs_state)"
 }
 
 alive(){
-  # PID 存在且 cmdline 确实是本脚本 — 防止重启后 pidfile 残留/复用导致误判
+  # PID 存在且 cmdline 确实是本脚本 — 防止重启后 pidfile 残留/复用导致误判;
+  # 排除 guard(触控守护)实例, 两个进程共用 apply.sh 入口
   [ -f "$PIDF" ] || return 1
   p=$(cat "$PIDF" 2>/dev/null)
-  [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "apply.sh" "/proc/$p/cmdline" 2>/dev/null
+  [ -n "$p" ] && [ -d "/proc/$p" ] && grep -q "apply.sh" "/proc/$p/cmdline" 2>/dev/null \
+    && ! grep -q "guard" "/proc/$p/cmdline" 2>/dev/null
 }
 
 # ---- 看门狗(v1.5.2): 验实测/模式/可切换性, 漂移时重写 refresh 设置 ----
@@ -302,6 +468,12 @@ case "$1" in
     sleep 3
     verify_and_fix
     ;;
+  guard|touch-daemon)
+    # v1.6.0: 触控守护独立进程(service.sh 拉起); 不写刷新设置、不碰策略
+    mkdir -p "$DATA"
+    trim_log
+    touch_guard
+    ;;
   status)
     # WebUI 只读字段。旧键名/顺序保持不变，只在末尾追加。
     echo "peak=$(cur_peak) min=$(cur_min)"
@@ -351,6 +523,18 @@ case "$1" in
     # v1.5.2 追加: 系统是否允许切换刷新率(固定模式会卡 120); SF 1035 实验开关
     echo "refresh_changeable=$(refresh_changeable)"
     echo "sf_1035=${SF_1035_ENABLE:-0}"
+    # v1.6.0 追加: 策略完整性与来源; 触控守护状态/目标档位/本次开机写回次数
+    echo "policy_live_src=$(policy_src)"
+    echo "default_rate_id=$(policy_attr defaultRateId "$POLICY_SRC")"
+    echo "default_max_rate=$(policy_attr defaultMaxRate "$POLICY_SRC")"
+    echo "win_override=$(policy_count 'enableWinOverride="false"' "$POLICY_SRC")/$(policy_count '<item ' "$POLICY_SRC")"
+    echo "policy_complete=$(policy_complete)"
+    echo "touch_target_sensitive=${TOUCH_SENSITIVE_LEVEL:--1}"
+    echo "touch_target_smooth=${TOUCH_SMOOTH_LEVEL:--1}"
+    echo "touch_guard=${TOUCH_GUARD:-pin}"
+    echo "touch_daemon=$(guard_alive && echo alive || echo dead)"
+    fb=$(cat "$TOUCHF" 2>/dev/null)
+    echo "touch_fallback=${fb:-0}"
     ;;
   *)
     echo "用法: sh apply.sh boot|daemon|once|status"

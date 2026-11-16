@@ -78,6 +78,11 @@
 | SF 模式表 | `mSfDisplayModes` id=6 → vsyncRate=144.00002；`mActiveSfDisplayMode id=6`；display 侧 `mActiveModeId=7` | ✅ 再次证实两个编号空间；`sf_mode_id` 的 grep 模式 `vsyncRate=144.00` 能命中 `144.00002`（前缀匹配） |
 | `mDisplayModeSpecs` | `primary=physical:(144.0 144.0) render:(144.0 144.0)` | ✅ 策略覆盖+SF 强切后 render range 不再被压 120 |
 
+> **v1.6 修正（2026-11-17）**：源码里 `touch_scen_config_write()` 的 `SENSITIVE_LEVEL` 分支在值**变化**时会直接写
+> `ts->sensitive_level_chosen`；只有同一个值重复写才是 no-op。因此上表“场景通道 sensitive_level=0 与 chosen=4
+> 并存不冲突”只对**探针那一刻的快照**成立，不能证明整个开机周期不覆盖。ColorOS 把场景值从 0 改成别的、再改回 0，
+> 就会把 chosen 改掉。详见 [v1.6-pin-design.md](v1.6-pin-design.md) §2.2。
+
 **旧版拉锯实锤**（p2p.log 历史段）：11-10 至 11-15 凌晨共 40+ 条 `game_switch 漂移(0), 重写`，以及 11-10 18:08–18:14、11-14 01:04–01:14 两段每 5s 一条的 `实测 120Hz != 144Hz, 重新应用(settings+SF)` 刷屏（各持续 6–10 分钟）——正是 v1.5.0 退避+限频+单通道要消灭的形态。v1.5.0 启动后（01:00:05 起）日志干净，无漂移无重写。
 
 ## 6. 真机验证命令（验收清单触控部分）

@@ -12,25 +12,28 @@
 
 面板档位（CSOT 3392x2400）：30/48/50/60/90/120/144，内核默认档就是 144（id 7）。
 
-## 做了什么（v1.5.2）
+## 做了什么（v1.6.1）
 
 **刷新率：策略源头覆盖（元模块合并）+ peak=144/min=120 + 退避看门狗**
 
 0. **策略源头**：`/my_product/etc/refresh_rate_config.xml` 的 `maxrefreshsettings="3"`(=120 截断总开关) 改 `4`(=144)，同时把 `rateId="a-b-c-d"` 两端改 `4`。覆盖副本生成到 `<模块>/my_product/etc/refresh_rate_config.xml`——标准模块目录布局，**由元模块合并生效**（overlay/magic/VFS 均可；overlay 合并在 mountinfo 不可见，属正常）。每次开机从当前系统原件重生成（OTA 自适应）。**本模块不再自己 bind**：没装元模块或元模块不接管 `my_product` 时，自动退化为纯运行时方案（下面 1-4 仍保 144，只是设置页的智能降帧等策略行为不变）。
+0.1 **v1.6.0 策略补全**：真机日志显示活文件里可能没有 `defaultRateId`，且缺 `defaultMaxRate`/`enableWinOverride="false"`——没有 `defaultMaxRate` 时策略默认按 120 处理 app 切换 boost/浮窗，不关 winOverride 时应用可把频率往下 revise（掉 120 再被看门狗拉回）。现在副本会补 `defaultMaxRate="144"`、给每个 `<item>` 加 `enableWinOverride="false"`，并在**校验通过后**才落盘（失败保留旧副本）。`status` 新增 `policy_complete`：`maxrefreshsettings`/`defaultMaxRate`/winOverride（/`defaultRateId` 若存在）四项都达标才报「已生效」。
 1. **v1.5.2 关键修正**：`min_refresh_rate` 不再写 `144.0`，默认 `120.0`。本机实测 `min=peak=144` 会让 ColorOS 的 `mRefreshRateChangeable=false`，亮屏后停 120 不再 modeset；改成 120 后 `mRefreshRateChangeable=true`，系统可在 120/144 间切换并保持 144。设置页选「智能切换」是同一效果。
 2. **SF 1035 仅保留实验开关**：`service call SurfaceFlinger 1035 i32 6` 在本机 ColorOS 16.0.10.600 上实测为空操作（返回 `Parcel(NULL)`、`debugDisplayModeByBackdoorPid` 始终 0、`i32 -1` 返回 Invalid argument）。v1.5.2 默认 `SF_1035_ENABLE=0`，不再作为运行期强制手段；只有其他 ROM/旧版本确认有效时才开。
 3. **settings 写入**：`peak=144.0`、`min=120.0`、`oplus_customize_screen_refresh_rate=4`、`user_refresh_rate=144`、user-preferred display mode——开机/once 写一次。写入走 `setting_put`：`settings` → `runcon u:r:shell:s0 settings` → `content update` 三级回退 + 回读校验。本机 ksu 域直接 `settings put` 会 `Failed transaction`，模块会记日志而不是假装成功。
 4. **看门狗（退避）**：亮屏稳态每 10s 查实测帧率；漂移时重写 min/peak 触发系统重新 modeset，2s 后复查；连续失败退避 10→20→40→60s 封顶，成功回稳态；同因日志每分钟最多一条；灭屏 20s 长睡。`SF_1035_ENABLE=1` 时才补 1035。
 
-**触控（v1.5.0：持久档位，零拉锯）**
+**触控（v1.6.0：持久档位 + 回退守护）**
 
 - **不再常驻写 `game_switch_enable`**。旧版每 5s 与 ColorOS 游戏助手互相重写形成拉锯；且一手内核源码证实本机写它只发一条固件 GAME_ON 命令（无 smooth/sensitive 副作用），v2 栈亮屏还会自动恢复——常驻维护既无必要又有害。详见 [docs/touch-research-v1.5.md](docs/touch-research-v1.5.md)。
-- 改为开机/手动应用时写一次持久档位：`/proc/touchpanel/sensitive_level=4`、`smooth_level=1`（官方 DTS 档位表，chosen 档亮屏内核自动重放）。系统/游戏助手改档属官方意图，不对抗；充电插拔切厂商 charging 表，接受不补写。节点不存在（OTA 换栈）则跳过记日志，绝不盲写。
+- 开机/手动应用时写持久档位：`/proc/touchpanel/sensitive_level=4`、`smooth_level=1`（官方 DTS 档位表，chosen 档亮屏内核自动重放）。**v1.6 真机日志证明只写一次保不住**：30 秒轨迹里 sens/smooth 全是 0（ColorOS 改回厂商默认），于是加**独立守护** `apply.sh guard`：亮屏每 1s 读档位，不等于目标就写回并回读；每分钟最多写回 `TOUCH_GUARD_MAX_WRITES`（默认 6）次，超了退避，避免 1s 拉锯刷屏；灭屏不写。守护只写 proc，不写 `touch_scene_para`（避免把 scene 的"最后值"改成 4，反而让系统的 0 生效）。
+- 守护进程与刷新看门狗**分开**（不同 pidfile/进程），互不拖累。
+- **v1.6.1 游戏模式**：`game_switch_enable` 写 `1`（固件 GAME_ON；本机 DTS 无 smooth/sensitive 联动，不影响两个档位）。开机写一次 + 守护维护：系统把它改回 0 时，按同一每分钟上限写回；想完全不碰设 `TOUCH_GAME_SWITCH="-1"`（旧版 v1.5.x 就是不碰，避免与游戏助手互写）。
 - 触控 IRQ 自动绑最强 CPU 簇（policy6, max 3.28GHz）：实测触控中断为 **IRQ 288（`touch-00`，GPIO 162）**，默认 378 万次中断全砸 CPU0 小核 → 改绑大核，匹配关键字就是 `touch`（不是 touchpanel）。
 - 内核自带 `touch_boost_cpufreq`（触摸时 CPU 提频）保持原样不动。
 - `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` 格式未知，**只记录不盲写**。
 
-**WebUI（v1.5.2：精简状态页 + 诊断导出）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，四张状态卡（看门狗/刷新率/策略/触控）2×2 一屏看完；「诊断与导出」区可一键导出日志或复制原始状态。页面**不渲染日志内容**、不展示 key=value 原文（复制按钮拿到的仍是完整 status 接口文本）；不写配置、不触发应用。策略卡结果导向：「已生效 / 运行时方案（中性）/ 未生效」；刷新率卡在 120 且 `refresh_changeable=false` 时会提示「固定刷新率模式 → 设置里选智能切换」；触控卡显示灵敏度/平滑档位。**日志每次重启自动清空**，只保留本次开机内容。
+**WebUI（v1.6.0：两卡 + 精简导出）**：KSU/APatch 模块卡片直接打开 `webroot/index.html`，只留「实测刷新率」「触控档位」两卡 + 一行「看门狗 · 策略」小字；「诊断与导出」区可一键导出日志或复制原始状态。页面**不渲染日志内容**、不展示 key=value 原文；不写配置、不触发应用。刷新率卡在 120 且 `refresh_changeable=false` 时会提示「固定刷新率模式 → 设置里选智能切换」；触控卡按**目标 vs 实际**判定，档位被改回 0 时亮黄并显示「守护写回中 / 已写回 N 次」。**日志每次重启自动清空**，只保留本次开机内容。
 
 **安全设计**
 
@@ -62,11 +65,17 @@ KSU / APatch 管理器 → 模块 → 从存储安装 → 选 zip → 重启；M
 | `SF_1035_ENABLE` | `0` | `1`＝启用 SF 1035 实验强切；本机实测空操作，默认关闭 |
 | `TOUCH_SENSITIVE_LEVEL` | `4` | `/proc/touchpanel/sensitive_level` 选档 0-5；`-1`＝不碰该节点 |
 | `TOUCH_SMOOTH_LEVEL` | `1` | `/proc/touchpanel/smooth_level` 选档 0-5；`-1`＝不碰该节点 |
+| `TOUCH_GAME_SWITCH` | `1` | `game_switch_enable`（固件 GAME_ON）；`-1`＝不碰；系统改回 0 时守护写回 |
 | `TOUCH_IRQ_AFFINITY` | `auto` | 触控 IRQ 绑最强 CPU 簇；`0` 关闭；也可写 `"6 7"` |
+| `TOUCH_GUARD` | `pin` | 触控守护：`pin`=回退即写回；`log`=只记录（首次排查）；`off`=关闭 |
+| `TOUCH_GUARD_INTERVAL` | `1` | 触控守护亮屏巡检秒数（灭屏自动降到 5s） |
+| `TOUCH_GUARD_MAX_WRITES` | `6` | 每分钟写回上限，超过退避到下一分钟（防拉锯） |
 | `WATCH_INTERVAL` | `10` | 亮屏稳态巡检秒数（灭屏固定 20s；失败退避至 60s 封顶） |
 | `TARGET_HZ` | `144` | 看门狗判定的目标实测帧率（也用于 SF mode id 解析） |
 | `POLICY_ENABLE` | `1` | `1`＝生成策略覆盖副本；`0`＝不生成（纯运行时方案，改完重启） |
 | `POLICY_RATE` | `4` | 策略文件 rateId/maxrefreshsettings 目标档（4=144） |
+| `POLICY_DEFAULT_MAX_RATE` | `144` | `<config defaultMaxRate>`（Hz 值；空=不写）。缺省时策略按 120 处理 boost/浮窗 |
+| `POLICY_WIN_OVERRIDE` | `all` | `all`=所有 `<item>` 加 `enableWinOverride="false"`（应用不能自己往下 revise）；`off`=不改 |
 
 v1.5.0 移除的键：`POLICY_MOUNT`（不再自挂载）、`FORCE_SF_MODE`（SF 不再是主机制，改用 `SF_1035_ENABLE` 实验开关）、`FORCE_USER_MODE`（user-mode 随 boot 无条件写）、`TOUCH_GAME_SWITCH`（改持久档位方案）。旧 config 里残留这些键无害，会被忽略。
 
@@ -74,10 +83,10 @@ v1.5.0 移除的键：`POLICY_MOUNT`（不再自挂载）、`FORCE_SF_MODE`（SF
 
 安装/更新后**重启一次**，模块卡片会出现 **WebUI** 入口（`webroot/index.html`，管理器用 WebView 打开，不需要端口或额外服务）。重启后守护进程约 10 秒启动，状态页点「刷新」即可。
 
-![WebUI 状态页（v1.4.3 旧版预览，v1.5.2 已精简为四卡 2×2 + 诊断导出区）](docs/webui-preview.png)
+![WebUI 状态页（v1.4.3 旧版预览，v1.6.0 已精简为两卡 + 一行守护/策略）](docs/webui-preview.png)
 
-- **状态页（v1.5.2）**：四卡 2×2 网格（窄屏单列），一屏看完——看门狗、实测刷新率、策略覆盖（已生效 / 运行时方案 / 未生效）、触控档位（灵敏度/平滑）。每 10 秒静默自动刷新，顶栏显示更新时间。刷新率卡在固定模式且卡 120 时会提示去设置里选「智能切换」。
-- **诊断与导出**：「导出日志」把状态、策略、两份日志（本次开机起）与挂载信息合成一个 txt 写到 `/sdcard/Download/pad2pro-doctor-<时间>.txt`；「复制状态」把完整 `key=value` 原始接口文本放进剪贴板（页面本身不展示原文）。导出在设备侧完成；Download 不可写时自动回退 `/data/local/tmp/`，toast 报出实际路径。日志大小/时间参考行可判断守护是否在写。
+- **状态页（v1.6.0）**：两卡（实测刷新率 / 触控档位，窄屏单列）+ 一行「看门狗 · 策略」小字。每 10 秒静默自动刷新，工具栏显示更新时间。刷新率卡在固定模式且卡 120 时会提示去设置里选「智能切换」；触控卡按目标 vs 实际判定，档位被系统改回 0 时显示「目标 4 / 1 · 守护写回中 · 已写回 N 次」。
+- **诊断与导出**：「导出日志」把状态、策略摘要、两份日志各尾部 200 行合成一个 txt 写到 `/sdcard/Download/pad2pro-doctor-<时间>.txt`；「复制状态」把完整 `key=value` 原始接口文本放进剪贴板（页面本身不展示原文）。导出在设备侧完成；Download 不可写时自动回退 `/data/local/tmp/`，toast 报出实际路径。日志大小/时间参考行可判断守护是否在写。
 - **反馈**：每个按钮点击都有 toast；自动刷新不打扰。
 - **只读**：不改 `config.conf`、不触发 `apply.sh once`；要立即应用仍点模块卡「操作」按钮。
 - 普通浏览器打开只会显示提示页；Magisk 原生没有模块 WebUI，继续用「操作」按钮或命令行。
@@ -102,6 +111,9 @@ v1.5.0 移除的键：`POLICY_MOUNT`（不再自挂载）、`FORCE_SF_MODE`（SF
 ## 已知取舍
 
 - v1.5.2 起默认 `min=120`，保留高刷下限并让系统可切 144；`min=144` 会让 ColorOS 进入固定刷新率，本机实测亮屏后卡 120，**不要用**。30fps 视频若抖动，可把 `REFRESH_MIN` 改 `"10.0"`（允许更低 AFR）
+- **v1.6.0 触控守护会与系统"抢"档位**：`TOUCH_GUARD=pin` 时，系统每次把档位改回 0，守护会在 ≤1s 内写回，每分钟最多 6 次；若日志里「回退持续, 已达上限」反复出现，说明有程序在持续改档，先切 `TOUCH_GUARD=log` 跑一个周期定位，再决定是否保留 pin
+- **v1.6.1 `game_switch` 与游戏助手可能互写**：本机写它只发固件 GAME_ON（不联动档位），但 ColorOS 游戏助手可能在进出游戏时改回 0；守护会按上限写回并记日志。若 `p2p.log` 里游戏模式回退频繁，设 `TOUCH_GAME_SWITCH="-1"` 不碰（旧版行为）
+- 策略补全按「活文件」判定：`status` 的 `policy_complete=1` 才代表 `defaultMaxRate`/winOverride 真的到了活文件；如果重启后仍为 0，说明我们的副本没有成为活文件（看 `policy_live_src`），此时策略改动不会生效，只能靠运行时层
 - 设置页的「高刷新率」可能把 min/peak 都写成 144，导致同样的固定模式；遇到卡 120 请选「智能切换」。WebUI 刷新率卡会显示「固定刷新率模式」提示
 - 本机 ksu 域直接 `settings`/`cmd`/`input` 会被 system_server 拒绝（Failed transaction），`su 2000` 仍是 ksu 域；模块已加 `content` 回退 + 回读，回退也失败会记日志。真机改设置仍以系统设置页为准
 - `SF_1035_ENABLE=1` 仅供其他 ROM/旧版本实验；本机已实测为空操作，不要依赖
@@ -129,19 +141,20 @@ adb shell su -c "sh /data/adb/modules/pad2pro_144_touch/apply.sh status"
 adb shell su -c "dumpsys display | grep -E 'mActiveModeId|mActiveRenderFrameRate'"
 ```
 
-期望：`mActiveModeId=7`、`mActiveRenderFrameRate=144.00002`（或 144.x）、`refresh_changeable=true`、`peak=144.0`；`min` 为 `120.0`（写入成功时）或系统「智能切换」的当前值（ksu 域写不进去时，不影响 144，只要 `refresh_changeable=true`）。有元模块时 `policy=maxrefreshsettings="4"`、`policy_source=meta`；无元模块时 `policy_source=runtime-only` 且 render 仍 144。若 `refresh_changeable=false` 且 render=120，去设置→显示与亮度→屏幕刷新率选「智能切换」。
+期望：`mActiveModeId=7`、`mActiveRenderFrameRate=144.00002`（或 144.x）、`refresh_changeable=true`、`peak=144.0`；`min` 为 `120.0`（写入成功时）或系统「智能切换」的当前值（ksu 域写不进去时，不影响 144，只要 `refresh_changeable=true`）。有外部接管时 `policy=maxrefreshsettings="4"`；v1.6.0 另看 `policy_complete=1`（策略四项都到活文件）与 `policy_live_src`。无元模块时 `policy_source=runtime-only` 且 render 仍 144。若 `refresh_changeable=false` 且 render=120，去设置→显示与亮度→屏幕刷新率选「智能切换」。
 
-WebUI：模块卡 → WebUI → 状态页应显示「正常」（无元模块时策略卡为中性「运行时方案」，总体仍可「正常」）；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-<时间>.txt`。
+WebUI：模块卡 → WebUI → 状态页应显示「正常」（无外部接管时策略行显示「运行时方案」，总体仍可「正常」）；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-<时间>.txt`。
 
-### v1.5.2 真机验收清单
+### v1.6.0 真机验收清单
 
-1. **有元模块**：重启 → status `policy=4`、`policy_source=meta`、`render=144Hz`、`daemon=alive`；WebUI 总体「正常」。
-2. **无元模块（模拟：临时禁用元模块重启）**：`policy_source=runtime-only`、`render=144Hz`；WebUI 策略卡中性「运行时方案」，不标红。验完恢复元模块。
+1. **策略补全**：重启 → `status` 里 `policy=4`、`default_max_rate=144`、`win_override=<item数>/<item数>`、`policy_complete=1`、`policy_live_src` 指向实际生效模块。若 `policy_complete=0`，看 `post_fs.log` 是「校验失败」还是「副本没被合并」（活文件没变）——后者说明策略层救不了，只能靠运行时。
+2. **触控守护**：`daemon=alive` 且 `touch_daemon=alive`；亮屏 1 分钟，`touch_sensitive=4 touch_smooth=1 game_switch=1` 应保持；`touch_fallback` 有增长说明期间被改过又写回。`p2p.log` 里触控相关日志每分钟 ≤1 条（没回退就不刷屏）。
 3. **看门狗/固定模式**：亮屏静置 10 分钟，`p2p.log` 不应刷屏（稳态无日志）；把设置页切到「高刷新率」或手动把 min 改成 144 制造固定模式，观察 ≤10s 内重写设置、2s 复查；仍不达标时退避间隔递增且日志每分钟 ≤1 条。切回「智能切换」应恢复 144。
-4. **灭亮屏**：灭屏 1 分钟再亮屏，render 仍 144；`cat /proc/touchpanel/sensitive_level /proc/touchpanel/smooth_level` 档位保持（内核自恢复）。
-5. **充电插拔**：插/拔充电器后回读档位——sensitive 可能切到 charging 表值（预期行为，不补写）；render 不受影响。
-6. **游戏进出**：进游戏再退出，回读档位与 `game_switch_enable`——系统可能改档/清 gs，本模块不反写（零拉锯）；`p2p.log` 无触控重写记录。
+4. **灭亮屏**：灭屏 1 分钟再亮屏，render 仍 144；`cat /proc/touchpanel/sensitive_level /proc/touchpanel/smooth_level` 档位保持（内核自恢复 + 守护兜底）。
+5. **充电插拔**：插/拔充电器后回读档位——charging 表会让实际手感略保守，但 chosen 档仍由守护保持；render 不受影响。
+6. **游戏进出**：进游戏再退出，若系统改档，守护会在 ≤1s 内写回目标档（`TOUCH_GUARD=pin`）；日志每分钟最多一条。想观察系统原始行为，临时切 `TOUCH_GUARD=log` 跑一个周期。
 7. **A/B 手感**：`TOUCH_SENSITIVE_LEVEL` 分别设 0（厂商默认）与 4/5 对比跟手性；方向反了改配置默认值。
+8. **导出体积**：doctor 导出应只含 `tail -n 200` 日志；`tools/diag_pin.sh` 默认输出约 10–15KB（不再 245KB），`PAD2PRO_DIAG_FULL=1` 才出全文。
 8. **探针回传**：`su -c sh <模块>/tools/probe_oplus.sh`，把 `/sdcard/Download/pad2pro_probe.txt` 发回（补齐 `/proc/touchpanel` 枚举、`touch_scene_default_para`、boost 节点全文证据）。
 9. **卸载还原**：卸载后 settings 四键回原值、档位回原档、user-preferred mode 清除；旧版升级用户 game_switch 也回安装时值。
 

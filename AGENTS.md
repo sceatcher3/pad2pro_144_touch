@@ -1,6 +1,6 @@
 # AGENTS.md — pad2pro_144_touch
 
-一加 Pad 2 Pro（OPD2413 / ColorOS 16）的 KernelSU / APatch / Magisk 模块：把「卡 120Hz 上不去 144」修好并保持 144（`peak=144` / `min=120`，保持可切换），附带触控优化。策略覆盖副本走标准模块目录、**由元模块合并生效，本模块不自挂载**（v1.5.0）；没接管时退化为纯运行时方案（min/peak + 看门狗；SF 1035 默认关闭）。
+一加 Pad 2 Pro（OPD2413 / ColorOS 16）的 KernelSU / APatch / Magisk 模块：把「卡 120Hz 上不去 144」修好并保持 144（`peak=144` / `min=120`，保持可切换），附带触控优化。策略覆盖副本走标准模块目录、**由元模块合并生效，本模块不自挂载**（v1.5.0）；没接管时退化为纯运行时方案（min/peak + 看门狗；SF 1035 默认关闭）。v1.6.0 起策略副本补 `defaultMaxRate`/`enableWinOverride`，并加**独立触控守护**（`apply.sh guard`）防 ColorOS 把档位改回 0；v1.6.1 起按用户要求把 `game_switch_enable` 写 `1`（默认 `TOUCH_GAME_SWITCH=1`，`-1` 回到不碰）。
 纯 `/system/bin/sh`，**没有构建步骤**，改文件即改产物；README.md 是给用户看的说明，本文件是给改代码的 agent 看的约定。触控接口的一手源码依据见 `docs/touch-research-v1.5.md`。
 
 ## 验证方式（唯一可用手段）
@@ -12,13 +12,13 @@
 for f in *.sh tools/*.sh tools/archive/*.sh; do sh -n "$f" || echo "FAIL $f"; done
 
 # 真机（需 root）
-su -c "sh /data/adb/modules/pad2pro_144_touch/apply.sh status"   # 有元模块时 policy= 应为 maxrefreshsettings="4"
+su -c "sh /data/adb/modules/pad2pro_144_touch/apply.sh status"   # 有外部接管时 policy= 应为 maxrefreshsettings="4"; v1.6 另看 policy_complete=1
 su -c "dumpsys display | grep -E 'mActiveModeId|mActiveRenderFrameRate'"
 ```
 
 期望 `mActiveModeId=7`（144 档）、`mActiveRenderFrameRate=144.00002` 左右、`refresh_changeable=true`、`peak=144.0`；`min` 为 120.0（写入成功）或系统「智能切换」当前值（ksu 域写不进去时，关键看 `refresh_changeable=true`）。无元模块时 `policy_source=runtime-only` 且 render 仍 144（退化不是故障）。若 `refresh_changeable=false` 且 render=120，去设置→显示与亮度→屏幕刷新率选「智能切换」。
 
-WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」（无元模块时策略卡为中性「运行时方案」）；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-*.txt`（页面不渲染日志，只显示两个日志文件的字节数/最后写入时间）。页面无 bridge 时只显示提示页，属正常。
+WebUI（真机，v1.6.0 两卡）：模块卡 → WebUI → 状态页应显示「正常」（无外部接管时策略行显示「运行时方案」）：「实测刷新率」「触控档位」两卡 + 一行「看门狗 · 策略」小字；点「导出日志」应在 `/sdcard/Download/` 出现 `pad2pro-doctor-*.txt`（页面不渲染日志，只显示两个日志文件的字节数/最后写入时间）。页面无 bridge 时只显示提示页，属正常。
 
 ## 结构与执行顺序
 
@@ -26,8 +26,8 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」（无
 |---|---|---|
 | `customize.sh` | 安装器：校验机型 `ro.product.model == OPD2413`，否则 `abort`；给脚本 `set_perm 0755`；`POLICY_ENABLE=1` 时现场生成 `my_product/etc/refresh_rate_config.xml`（=0 则删掉）。输出只留结果行，不放 changelog | 安装时 |
 | `post-fs-data.sh` | 从当前系统原件 `sed` 出覆盖副本到 `<模块>/my_product/etc/`（OTA 自适应、幂等）；`POLICY_ENABLE=0` 则移除副本；记录活文件是否已被元模块接管。**不做任何挂载** | 每次开机早期 |
-| `service.sh` | 清残留 `daemon.pid` → `sleep 10` → 后台起 `apply.sh daemon`。（v1.5.0 删掉了 late_start 补跑 post-fs-data——它只为旧版 bind 兜底服务） | 开机 late_start |
-| `apply.sh` | 核心：备份、settings 写入（`setting_put` 三级回退 + 回读）、触控持久档位、退避看门狗（验实测/模式/可切换性；`SF_1035_ENABLE=1` 才补 1035）；子命令 `boot\|daemon\|once\|status` | 手动 / 守护 |
+| `service.sh` | 清残留 `daemon.pid`/`guard.pid` → `sleep 10` 起 `apply.sh daemon`，`sleep 12` 起 `apply.sh guard`（两个独立进程） | 开机 late_start |
+| `apply.sh` | 核心：备份、settings 写入（`setting_put` 三级回退 + 回读）、触控持久档位、退避看门狗（验实测/模式/可切换性；`SF_1035_ENABLE=1` 才补 1035）、触控守护（回退即写回）；子命令 `boot\|daemon\|guard\|once\|status` | 手动 / 守护 |
 | `action.sh` | KSU 模块卡「操作」按钮 → `apply.sh once` + `status` | 用户点按 |
 | `uninstall.sh` | 杀守护进程、按 `backup.conf` 还原（含旧版 game_switch 行兼容）、清 user-preferred mode、umount 历史残留、删 `/data/adb/p2p144` | 卸载时 |
 | `config.conf` | 全部可调开关，被 `apply.sh` / `post-fs-data.sh` 以 `.` 加载 | — |
@@ -40,11 +40,12 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」（无
 - **`MODDIR=${0%/*}`**：所有脚本用这一行定位自身目录，不要硬编码 `/data/adb/modules/...`（KSU 与 Magisk 布局、模块名都可能变）。
 - **新增配置项要成对**：`config.conf` 加一行 + `apply.sh` 里 `VAR=${VAR:-默认值}` 兜底一行。缺兜底会在用户配置缺失时拿到空串。
 - **settings 写入是 v1.5.2 的核心开关之一，且必须回读**：`min_refresh_rate` 默认 `120.0`（不能 `144.0`——`min=peak` 会让 ColorOS `mRefreshRateChangeable=false`，亮屏后卡 120 不再 modeset）；`peak_refresh_rate=144.0`。本机 ksu 域直接 `settings put` 会 `Failed transaction`，`su 2000` 仍是 ksu 域，`content update` 可能静默 0 行；统一走 `setting_put`（`settings` → `runcon u:r:shell:s0 settings` → `content update`，写完 `setting_get` 回读），失败只记日志、不要假装成功。漂移时重写 min/peak 触发 modeset，不再盲打 SF 1035。
-- **版本号三处同步**：`module.prop` 的 `version` / `versionCode` + 相关脚本头部注释里的版本说明。`versionCode` 必须递增。当前 1.5.2 / versionCode 15。
+- **版本号三处同步**：`module.prop` 的 `version` / `versionCode` + 相关脚本头部注释里的版本说明。`versionCode` 必须递增。当前 1.6.1 / versionCode 17。
 - **幂等**：`post-fs-data.sh` 与 `apply.sh` 都可能在每次开机重复执行。写入前先比较当前值（如 `tp_level`），或让 sed 正则对已处理过的文件仍成立。
-- **守护进程单例**：`alive()` 用 `PIDF` + `/proc/$p/cmdline` 含 `apply.sh` 双条件判断，避免重启后 PID 复用误判。改 `watch()`/`service.sh` 时保留这两条。
-- **status 输出是接口**：`action.sh` 和 `tools/check_v12.sh` 都依赖 `apply.sh status` 的 `key=value` 行。加字段可以，别改已有键名。v1.4.0 新增 `daemon`、`target_hz`、`policy_enable`、`touch_switch`、`module_disabled`；v1.4.1 追加 `policy_module`；v1.5.0 追加 `policy_source`（meta/runtime-only/off）、`touch_sensitive`、`touch_smooth`；v1.5.2 追加 `refresh_changeable`（true/false; false=系统固定刷新率）、`sf_1035`（0/1 实验开关）。**语义变更**：`touch_switch` 现表示「持久档位优化是否启用」（原 TOUCH_GAME_SWITCH 已废弃）；`policy_bind` 保留但 v1.5.0 起恒为 no（历史残留除外）。
+- **守护进程单例（v1.6.0 起两个）**：`alive()`（刷新看门狗）用 `daemon.pid` + `/proc/$p/cmdline` 含 `apply.sh` 且**不含 `guard`** 判断；`guard_alive()`（触控守护）用 `guard.pid` + cmdline 含 `guard`。两个进程共用 `apply.sh` 入口，别用同一个 pidfile。改 `watch()`/`touch_guard()`/`service.sh` 时保留这些条件。
+- **status 输出是接口**：`action.sh` 和 `tools/check_v12.sh` 都依赖 `apply.sh status` 的 `key=value` 行。加字段可以，别改已有键名。v1.4.0 新增 `daemon`、`target_hz`、`policy_enable`、`touch_switch`、`module_disabled`；v1.4.1 追加 `policy_module`；v1.5.0 追加 `policy_source`（meta/runtime-only/off）、`touch_sensitive`、`touch_smooth`；v1.5.2 追加 `refresh_changeable`（true/false; false=系统固定刷新率）、`sf_1035`（0/1 实验开关）；v1.6.0 追加 `policy_live_src`（挂载来源模块名/system）、`default_rate_id`、`default_max_rate`、`win_override`（false 数/item 数）、`policy_complete`（1=策略四项都达标）、`touch_target_sensitive`/`touch_target_smooth`/`touch_guard`/`touch_daemon`/`touch_fallback`（本次开机写回次数；`TOUCH_GUARD=log` 时是记录到的回退次数）。**语义变更**：`touch_switch` 现表示「持久档位优化是否启用」（原 TOUCH_GAME_SWITCH 已废弃）；`policy_bind` 保留但 v1.5.0 起恒为 no（历史残留除外）。
 - **看门狗参数（v1.5.2）**：稳态 `WATCH_INTERVAL`（默认 10s）查 render_hz；漂移时 `apply_refresh quiet` 重写 min/peak 触发 modeset，2s 复查；`SF_1035_ENABLE=1` 才补 1035；连续失败退避 `WATCH_INTERVAL*fails` 封顶 60s，成功归零；同因日志 `date +%s` 限频每分钟 ≤1 条；灭屏 20s。改节奏时保持「单职责 + 退避 + 限频」三件套，别往循环里塞别的巡检。
+- **触控守护（v1.6.0，独立进程）**：`apply.sh guard` 每 `TOUCH_GUARD_INTERVAL`（默认 1s）读档位，不等于目标就写回并回读；每 10 tick 才 `dumpsys power` 判亮屏；灭屏 sleep 5；每分钟写回上限 `TOUCH_GUARD_MAX_WRITES`（默认 6），超了退避到下一分钟；同因日志每分钟 ≤1 条；`TOUCH_GUARD=log` 只记录不写、`off` 不启动。v1.6.1 起同一循环也维护 `game_switch_enable`（`TOUCH_GAME_SWITCH`，比较首字段而不是整串；写回共用每分钟上限）。**不要塞进 `watch()`**——刷新看门狗保持单职责。
 
 ## WebUI 约定（单页状态 + 日志导出）
 
@@ -57,8 +58,8 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」（无
 - **模块目录**：不写死路径；先按 `module.prop` 的 `id` 扫 `/data/adb/modules/*`，回退 `/data/adb/modules/pad2pro_144_touch`。
 - **桥差异**：KSU `exec` 返回 `{errno,stdout,stderr}`，APatch 返回字符串；页面适配层统一，并在命令末尾追加 `__RC=$?` 取真实退出码。不要依赖 `ksu.spawn`。
 - **权限**：`webroot` 的权限/SELinux 由管理器设置，不要在 `customize.sh` 里 chmod。
-- **状态判定（v1.5.2 结果导向）**：策略卡三态——`policy=4`→good「已生效」（文案不特指元模块，任何外部接管都算）；`policy_source=runtime-only` 且 render 达标→中性「运行时方案」（不算异常）；其余 policy≠4→warn「未生效」。刷新率卡：render=120 且 `refresh_changeable=false`→warn「固定刷新率模式」+ detail 提示「设置→显示与亮度→刷新率选『智能切换』」；render 达标→good；其余 bad。触控卡以 `touch_sensitive/touch_smooth` 档位为主（人话：灵敏度/平滑），`game_switch` **不再上页面**（仅旧版 status 无档位字段时回退展示）；卡片 detail 一律人话，不放 key=value 技术黑话。
-- **布局（v1.5.1）**：四卡 2×2 网格（<560px 单列）；无原始状态折叠面板（key=value 原文只通过「复制状态」按钮进剪贴板、或进导出文件）；「诊断与导出」区两按钮并排（导出日志 primary + 复制状态）+ 日志大小/时间参考行 + 一行缩略说明；顶栏只有模块名+版本+刷新状态+总体徽章；无页脚。
+- **状态判定（v1.6.0 两卡结果导向）**：页面只有「实测刷新率」「触控档位」两张卡，看门狗/策略压成一行小字。刷新率卡：render=120 且 `refresh_changeable=false`→warn「固定刷新率模式」+ 提示去设置选「智能切换」；render 达标→good。触控卡按**目标 vs 实际**：`touch_target_*` 与 `touch_sensitive/smooth` 一致→good；不一致→warn 并显示「目标 4 / 1 · 守护写回中」；节点不可读→warn。策略行：`policy=4` 且 `policy_complete=1`→「策略已生效」；`policy=4` 但属性不全→「策略属性不全」；`policy_source=runtime-only`→「策略未接管（运行时方案）」。`game_switch` 不上页面。卡片 detail 一律人话，不放 key=value 技术黑话。
+- **布局（v1.6.0）**：两卡（实测刷新率 / 触控档位，<560px 单列）+ 一行「看门狗 · 策略」小字；状态工具栏只留「更新于 + 刷新」；导出区 = 日志大小/时间两行 + 两按钮（导出日志 primary + 复制状态），无说明行；顶栏只有模块名 + 版本 + 总体徽章；无页脚，无原始状态折叠面板（key=value 只进剪贴板/导出文件）。
 - **验收**：开发环境没有 `/data/adb`，真机最终以模块卡 WebUI 打开为准；改完先跑 `sh -n` 和页面 JS 语法检查。
 
 ## 已知坑（踩过的）
@@ -73,10 +74,13 @@ WebUI（真机）：模块卡 → WebUI → 状态页应显示「正常」（无
 - **策略覆盖开关**：`POLICY_ENABLE=0` 时 `post-fs-data.sh` 必须同时 `rm -rf $MODDIR/my_product`，否则上一次开机残留的副本仍会被元模块合并，开关看似无效。元模块可能在我们的脚本之前就完成合并，所以关开关后旧副本可能还会生效一轮开机——别为此在 `post-fs-data.sh` 里加同步等待。
 - **策略文件词汇表**：`rateId` 0=未指定 1=90 2=60 3=120 4=144；文件头注释是过时的，只有尾部 `<config maxrefreshsettings="3">` 是真正的 120 截断总开关。
 - **策略文件是单行 XML（v1.4.1 踩过）**：`maxrefreshsettings` 在头部注释里也出现一次，同一个 `sed s///` 必须带 `/g`，否则只改到注释那一个、尾部总开关仍是 `3`。生成副本后要回读尾部校验并写 `post_fs.log`；`status` 的 `policy_module` 是副本自身的内容，用来区分「副本没改对」和「元模块没接管」。副本一律先写临时文件再 `cat` 原地覆盖，别用 `sed 源 > 副本`（源已是本模块副本时会把文件截成空）。
+- **`defaultRateId` 是大写 R（v1.6.0 已处理）**：sed 里必须单独一条 `s/defaultRateId="a-b-c-d"/.../g`，不能被小写 `s/rateId=/` 顺带匹配。但 **v1.6 真机日志显示活文件里可能根本没有 `defaultRateId`**（extreme_gt 接管后就没有这个属性），所以补丁重点落在 `defaultMaxRate="144"`（没有时策略按 120 处理 boost/浮窗）和给每个 `<item>` 加 `enableWinOverride="false"`（683→2142 个 item 全加）。改完必须用 `policy_complete=1` 验证三项都达标，别只看 `maxrefreshsettings=4` 就报「已生效」。
+- **活文件内容可能与本模块副本字节相同，无法靠内容判断是谁在生效（v1.6.0 实测）**：`mountinfo` 写的来源可能是 `extreme_gt`，但活文件与副本逐字节一致（都是 200296 B / 2142 item），sed 又恰好幂等，看不出差异。判断来源只看 `policy_live_src`（mountinfo 的 root 字段解析出的模块名）+ `policy_complete`；不要凭「副本内容对」推断已经生效。
 - **未知格式的内核节点只记录不盲写**：`/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` 由 `discover()` 记日志；官方内核分支里 grep 不到这两个确切路径的创建者（可能闭源 ko），没有一手格式资料就先别 `echo`。**真机实测它们是目录不是文件**（旧版 `head -c` 读目录永远为空，v1.5.0 已改为枚举文件名）。同名官方实现实为 sysfs `cpu*/touch_boost/`（CPU 提频）与 `/proc/sys/fbg/`（调度 boost），都不是触控报点。
 - **触控 IRQ 编号每次开机都变**（真机实测 288→343→279→282…），必须动态从 `/proc/interrupts` 解析，别硬编码；匹配关键字 `touch` 稳定命中。
-- **场景通道与直写档位并存不冲突**：`touch_scene_para` 的 `sensitive_level:0` 是按包名/activity 的增量层，proc 直写的 chosen 档（如 4）不被它覆盖；官方 `touch_scene_default_para` XML 内容全是 `pen_sensitive_level`（手写笔锁点），不管手指灵敏度——这是「直写档位零拉锯」的真机佐证。
+- **触控档位会被 ColorOS 改回 0（v1.6.0 实测）**：模块开机写到 4/1 后，诊断日志的 30 秒轨迹里 `sens=0 smooth=0` 30/30 次，说明「写一次不维护」保不住。所以 v1.6.0 加独立守护 `apply.sh guard`（`TOUCH_GUARD=pin` 默认写回；首次排查可切 `log` 只记录）。守护只写 proc 节点、不写 `touch_scene_para`，避免把 scene 的「最后值」改成 4 反而让系统的 0 生效。
+- **导出/诊断默认只出摘要（v1.6.0）**：`pad2pro-doctor-*.txt` 的日志各只 `tail -n 200`、策略只出 config/来源/计数；`tools/diag_pin.sh` 默认对三个策略文件与显示配置只出 sha256/config/计数/前 15 行（旧版全文 64KB×3 = 245KB）。要看全文用 `PAD2PRO_DIAG_FULL=1`。改导出格式时别把 `boot_only=1`、落盘路径回执（`__OK=`/`__SIZE=`）删掉，WebUI 靠它报 toast。
 - **触控 IRQ 匹配关键字是 `touch`**（`touch-00`，本机 IRQ 288 / GPIO 162），不是 `touchpanel`；亲和性按 `smp_affinity` 十六进制掩码写。
-- **game_switch 的三个一手结论（v1.5.0 调研，详见 docs/touch-research-v1.5.md）**：① 本机（NT36536/v2 栈/erhai DTS）写非 0 **只发固件 GAME_ON 命令**，无 smooth/sensitive/major_rate 副作用（DTS 无对应 support，README 旧描述有误）；② v2 栈灭屏清固件但不清 noise_level，**亮屏自动恢复**游戏模式与档位——不需要看门狗防灭屏丢失；③ common 层只做 `value>0` 布尔判断，社区 node 26 十六进制魔法值档位表属闭源 touchDaemon framework_mode 路径，本机无该节点，别照抄。因此 v1.5.0 起**不再写 game_switch**，改持久档位 `sensitive_level`/`smooth_level`（chosen 档亮屏自恢复；系统改档/充电插拔切 charging 表都接受不反写）。
+- **game_switch 的三个一手结论（v1.5.0 调研，详见 docs/touch-research-v1.5.md）**：① 本机（NT36536/v2 栈/erhai DTS）写非 0 **只发固件 GAME_ON 命令**，无 smooth/sensitive/major_rate 副作用（DTS 无对应 support，README 旧描述有误）；② v2 栈灭屏清固件但不清 noise_level，**亮屏自动恢复**游戏模式与档位——不需要看门狗防灭屏丢失；③ common 层只做 `value>0` 布尔判断，社区 node 26 十六进制魔法值档位表属闭源 touchDaemon framework_mode 路径，本机无该节点，别照抄。因此 v1.5.0 起**不再写 game_switch**，改持久档位 `sensitive_level`/`smooth_level`（chosen 档亮屏自恢复；系统改档/充电插拔切 charging 表都接受不反写）。**v1.6.1 按用户要求重新写入 1**（`TOUCH_GAME_SWITCH`，默认 1；开机一次 + 守护维护，写回共用每分钟上限；`-1` 回到 v1.5 的“不碰”）。它仍只发固件 GAME_ON、不联动档位，但可能与游戏助手互写——日志会记“游戏模式回退”，频繁就设 `-1`。
 - **触控档位方向未验证**：DTS 数值越小 presumably 越灵敏，固件语义闭源；真机手感反了只改 config 默认值（0=厂商默认，-1=不碰节点），别改代码逻辑。`pen_sensitive_level` 场景键动手写笔管线，刻意不碰。
 - **日志路径**：`/data/adb/p2p144/p2p.log`（>100KB 自动截断）、`post_fs.log`、备份 `backup.conf`。模块运行日志走这两处，别写 `/sdcard`（WebUI / `tools/check_v12.sh` 的用户导出例外：`/sdcard/Download/`，文件名前缀 `pad2pro-`）。
