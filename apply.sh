@@ -1,5 +1,9 @@
 #!/system/bin/sh
 # apply.sh — Pad 2 Pro 144Hz 修复 + 触控优化 核心
+# v1.6.2: 触控档位默认 4/1 -> 2/3(FPS 准星微抖); game_switch=1 作为高轮询率唯一入口保留;
+#   守护写回前用触摸 IRQ 计数差值避让报点活动(fd_touch_count 受 face_detect_support
+#   门控本机不存在), 连续避让 TOUCH_GUARD_DEFER_MAX tick 后强制写一次;
+#   status/应用快照共用一次 dumpsys display; trim_log 临时文件带 PID 防并发互踩
 # v1.6.1: 新增 TOUCH_GAME_SWITCH(默认 1): 写 game_switch_enable=1(固件 GAME_ON),
 #   开机写一次 + 触控守护维护; -1=不碰. 本机 DTS 无 smooth/sensitive 联动, 只发固件命令.
 # v1.6.0: 策略副本配套 defaultMaxRate/enableWinOverride 校验(policy_complete);
@@ -16,7 +20,7 @@
 #   看门狗单职责盯实测帧率(稳态10s/复查2s/失败退避60s封顶/日志限频);
 #   触控改持久档位(sensitive_level/smooth_level), 不再常驻写 game_switch;
 #   sf_mode_id 守护进程内缓存, 失败才重解析; status 追加 policy_source/touch_sensitive/touch_smooth
-# 用法: sh apply.sh boot|daemon|once|status
+# 用法: sh apply.sh boot|daemon|guard|once|status
 # boot/daemon: 应用一次并进入看门狗循环  once: 应用一次  status: 打印当前状态
 
 MODDIR=${0%/*}
@@ -36,13 +40,14 @@ USER_REFRESH_RATE=${USER_REFRESH_RATE:-144}
 OPLUS_REFRESH_KEY=${OPLUS_REFRESH_KEY:-4}
 SF_FALLBACK_ID=${SF_FALLBACK_ID:-6}
 SF_1035_ENABLE=${SF_1035_ENABLE:-0}
-TOUCH_SENSITIVE_LEVEL=${TOUCH_SENSITIVE_LEVEL:-4}
-TOUCH_SMOOTH_LEVEL=${TOUCH_SMOOTH_LEVEL:-1}
+TOUCH_SENSITIVE_LEVEL=${TOUCH_SENSITIVE_LEVEL:-2}
+TOUCH_SMOOTH_LEVEL=${TOUCH_SMOOTH_LEVEL:-3}
 TOUCH_GAME_SWITCH=${TOUCH_GAME_SWITCH:-1}
 TOUCH_IRQ_AFFINITY=${TOUCH_IRQ_AFFINITY:-auto}
 TOUCH_GUARD=${TOUCH_GUARD:-pin}
 TOUCH_GUARD_INTERVAL=${TOUCH_GUARD_INTERVAL:-1}
 TOUCH_GUARD_MAX_WRITES=${TOUCH_GUARD_MAX_WRITES:-6}
+TOUCH_GUARD_DEFER_MAX=${TOUCH_GUARD_DEFER_MAX:-10}
 POLICY_DEFAULT_MAX_RATE=${POLICY_DEFAULT_MAX_RATE:-144}
 POLICY_WIN_OVERRIDE=${POLICY_WIN_OVERRIDE:-all}
 WATCH_INTERVAL=${WATCH_INTERVAL:-10}
@@ -52,7 +57,9 @@ log(){ echo "$(date '+%m-%d %H:%M:%S') $*" >>"$LOGF"; }
 trim_log(){
   [ -f "$LOGF" ] || return 0
   sz=$(wc -c <"$LOGF")
-  [ "$sz" -gt 102400 ] && { tail -n 300 "$LOGF" >"$LOGF.t"; mv "$LOGF.t" "$LOGF"; }
+  # tmp 名带 PID: guard 启动与 once 可能并发截断, 共用 .t 会互相覆盖;
+  # tail 失败不 mv(保留原日志), 残留 tmp 清掉
+  [ "$sz" -gt 102400 ] && { tail -n 300 "$LOGF" >"$LOGF.t.$$" && mv "$LOGF.t.$$" "$LOGF" || rm -f "$LOGF.t.$$"; }
   return 0
 }
 screen_on(){ dumpsys power 2>/dev/null | grep -q 'mWakefulness=Awake'; }
@@ -88,9 +95,11 @@ setting_put(){
 }
 cur_peak(){ setting_get system peak_refresh_rate; }
 cur_min(){ setting_get system min_refresh_rate; }
-render_hz(){ dumpsys display 2>/dev/null | grep -o 'mActiveRenderFrameRate=[0-9]*' | head -n 1 | cut -d= -f2; }
-mode_id(){ dumpsys display 2>/dev/null | grep -o 'mActiveModeId=[0-9]*' | head -n 1 | cut -d= -f2; }
-refresh_changeable(){ dumpsys display 2>/dev/null | grep -o 'mRefreshRateChangeable: [a-z]*' | head -n 1 | awk '{print $2}'; }
+# v1.6.2: 可选参数=预取的 dumpsys display 输出(status/应用快照内多次查询共用一次 dump,
+# 省 2-5 次 binder 调用); 不传参仍现取(看门狗每次巡检语义不变)。printf 避免 echo 转义差异。
+render_hz(){ printf '%s\n' "${1:-$(dumpsys display 2>/dev/null)}" | grep -o 'mActiveRenderFrameRate=[0-9]*' | head -n 1 | cut -d= -f2; }
+mode_id(){ printf '%s\n' "${1:-$(dumpsys display 2>/dev/null)}" | grep -o 'mActiveModeId=[0-9]*' | head -n 1 | cut -d= -f2; }
+refresh_changeable(){ printf '%s\n' "${1:-$(dumpsys display 2>/dev/null)}" | grep -o 'mRefreshRateChangeable: [a-z]*' | head -n 1 | awk '{print $2}'; }
 gs_state(){ sed 's/,.*//' /proc/touchpanel/game_switch_enable 2>/dev/null | tr -d ' '; }
 tp_level(){ cat "/proc/touchpanel/$1" 2>/dev/null | tr -d ' \n'; }
 # 策略文件里的截断开关(取最后一个是真正的总开关; 头部注释里那个是过时的)
@@ -179,7 +188,8 @@ sf_apply(){
 }
 
 verify_and_fix(){
-  hz=$(render_hz); mid=$(mode_id); ch=$(refresh_changeable)
+  ds=$(dumpsys display 2>/dev/null)
+  hz=$(render_hz "$ds"); mid=$(mode_id "$ds"); ch=$(refresh_changeable "$ds")
   if [ "$hz" != "$TARGET_HZ" ]; then
     log "实测 ${hz:-?}Hz != ${TARGET_HZ}Hz (mode=${mid:-?} changeable=${ch:-?})"
     if [ "$ch" = "false" ]; then
@@ -277,11 +287,57 @@ guard_alive(){
     && grep -q "guard" "/proc/$p/cmdline" 2>/dev/null
 }
 GT=""
+# 同因日志每分钟 ≤1 条。强制写回(唯一明知会卡 20ms 的时刻)与每分钟上限(持续拉锯信号)
+# 是 P2 诊断关键事件, 各自独立桶, 不与暂缓/写回日志互相吞掉; 其余共用 GT 桶(旧行为)。
 glog(){
   now=$(date +%s)
-  [ $((now - ${GT:-0})) -lt 60 ] && return 0
-  GT=$now
+  case "$1" in
+    *强制写回*) last=${GTF:-0} ;;
+    *上限*)     last=${GTC:-0} ;;
+    *)          last=${GT:-0} ;;
+  esac
+  [ $((now - last)) -lt 60 ] && return 0
+  case "$1" in
+    *强制写回*) GTF=$now ;;
+    *上限*)     GTC=$now ;;
+    *)          GT=$now ;;
+  esac
   log "触控守护: $*"
+}
+# ---- v1.6.2: 写回避让(报点活动检测) ----
+# 不能用 fd_touch_count: 它受 face_detect_support 门控(本机 DTS 无此属性, 节点不创建;
+# 即使存在也只统计人脸检测开启时上半屏中心区的手指, touchpanel_proc.c L6145)。
+# 改用 /proc/interrupts 触摸 IRQ 计数差值: 读取不持 ts->mutex; 150ms 内计数增长 =
+# 报点正在流动, 此时写 proc 会持 ts->mutex >=20ms 卡住报点线程(tp_irq_thread_fn 同锁)。
+# 计数不涨 = 无报点流量(手指抬起, 或静止不出报点), 写回不会造成可感知卡顿。
+touch_irq_sum(){
+  grep -i touch /proc/interrupts 2>/dev/null | awk '
+    { s=0; for (i=2; i<=NF; i++) { if ($i ~ /^[0-9]+$/) s+=$i; else break } total+=s }
+    END { print total+0 }'
+}
+BUSY_TICK=-1; BUSY=0; DEFER=0; DEFER_TICK=-1
+# 每 tick 最多探测一次(150ms), 结果按 tick 缓存; $tick 由 touch_guard 循环维护
+touch_busy(){
+  if [ "$BUSY_TICK" != "$tick" ]; then
+    BUSY_TICK=$tick
+    a=$(touch_irq_sum); sleep 0.15; b=$(touch_irq_sum)
+    if [ "$b" -gt "$a" ] 2>/dev/null; then BUSY=1; else BUSY=0; fi
+  fi
+  [ "$BUSY" = "1" ]
+}
+# 写回门: 返回 0=允许写, 1=本轮跳过(跳过不计入 writes 上限)。
+# defer 只在确有漂移要写回时累加, 每 tick 至多 +1; 连续避让达 TOUCH_GUARD_DEFER_MAX
+# 强制写一次, 避免持续触控时永远不写回。log 模式不写节点, 不经过此门。
+write_gate(){
+  if ! touch_busy; then DEFER=0; return 0; fi
+  if [ "$DEFER_TICK" != "$tick" ]; then DEFER=$((DEFER + 1)); DEFER_TICK=$tick; fi
+  if [ "$DEFER" -ge "$TOUCH_GUARD_DEFER_MAX" ]; then
+    DEFER=0
+    glog "报点活跃连续 ${TOUCH_GUARD_DEFER_MAX} tick, 强制写回一次(持锁>=20ms)"
+    return 0
+  fi
+  glog "报点活跃, 暂缓写回 ($DEFER/$TOUCH_GUARD_DEFER_MAX)"
+  return 1
 }
 touch_guard(){
   case "${TOUCH_GUARD:-pin}" in
@@ -297,8 +353,8 @@ touch_guard(){
   fi
   echo $$ >"$GUARDF"
   echo 0 >"$TOUCHF" 2>/dev/null
-  log "触控守护启动 (mode=$TOUCH_GUARD 间隔=${TOUCH_GUARD_INTERVAL}s 上限=${TOUCH_GUARD_MAX_WRITES}/min)"
-  tick=0; on=1; writes=0; bucket=0; fallback=0
+  log "触控守护启动 (mode=$TOUCH_GUARD 间隔=${TOUCH_GUARD_INTERVAL}s 上限=${TOUCH_GUARD_MAX_WRITES}/min 避让=${TOUCH_GUARD_DEFER_MAX}tick)"
+  tick=0; on=1; writes=0; bucket=0; fallback=0; DEFER=0; DEFER_TICK=-1; BUSY_TICK=-1
   while :; do
     # 亮屏判断不必每秒 dumpsys: 每 10 tick(≈10s) 刷新一次
     if [ $((tick % 10)) -eq 0 ]; then
@@ -322,6 +378,7 @@ touch_guard(){
           glog "回退持续, 已达每分钟 ${TOUCH_GUARD_MAX_WRITES} 次上限, 本分钟不再写"
           continue
         fi
+        write_gate || continue
         if echo "$want" >"/proc/touchpanel/$node" 2>/dev/null; then
           writes=$((writes + 1))
           fallback=$((fallback + 1))
@@ -345,6 +402,8 @@ touch_guard(){
             glog "游戏模式回退(仅记录): ${gcur}->$TOUCH_GAME_SWITCH"
           elif [ "$writes" -ge "$TOUCH_GUARD_MAX_WRITES" ]; then
             glog "游戏模式回退持续, 已达每分钟 ${TOUCH_GUARD_MAX_WRITES} 次上限"
+          elif ! write_gate; then
+            : # 报点活跃, 本轮暂缓(门内已记日志)
           elif echo "$TOUCH_GAME_SWITCH" >/proc/touchpanel/game_switch_enable 2>/dev/null; then
             writes=$((writes + 1)); fallback=$((fallback + 1)); echo "$fallback" >"$TOUCHF" 2>/dev/null
             glog "游戏模式已写回: ${gcur}->$TOUCH_GAME_SWITCH"
@@ -358,6 +417,7 @@ touch_guard(){
     if [ "$on" = "0" ]; then
       sleep 5
       tick=0
+      BUSY_TICK=-1   # 灭屏跨周期后作废报点活动缓存, 亮屏重新探测
     else
       sleep "$TOUCH_GUARD_INTERVAL"
     fi
@@ -388,7 +448,8 @@ do_apply(){
   # 每次开机/手动应用都留一条策略快照, 排查时不用再猜"是副本错了还是没挂上"
   pv=$(policy_rate "$POLICY_SRC"); pmv=$(policy_rate "$MODDIR/my_product/etc/refresh_rate_config.xml")
   log "策略: 活文件=${pv:-none} 副本=${pmv:-none} (144 档应为 maxrefreshsettings=\"4\")"
-  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz)Hz mode=$(mode_id) changeable=$(refresh_changeable) sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level) gs=$(gs_state)"
+  ds=$(dumpsys display 2>/dev/null)
+  log "应用完成: peak=$(cur_peak) min=$(cur_min) 实测=$(render_hz "$ds")Hz mode=$(mode_id "$ds") changeable=$(refresh_changeable "$ds") sensitive=$(tp_level sensitive_level) smooth=$(tp_level smooth_level) gs=$(gs_state)"
 }
 
 alive(){
@@ -476,11 +537,13 @@ case "$1" in
     ;;
   status)
     # WebUI 只读字段。旧键名/顺序保持不变，只在末尾追加。
+    # v1.6.2: display 信息一次 dump 供下面多个字段复用(原来 3 次 dumpsys display)
+    ds=$(dumpsys display 2>/dev/null)
     echo "peak=$(cur_peak) min=$(cur_min)"
     echo "user_mode=$(cmd display get-user-preferred-display-mode 2>/dev/null)"
-    echo "render=$(render_hz)Hz"
+    echo "render=$(render_hz "$ds")Hz"
     echo "game_switch=$(gs_state)"
-    echo "mode_active=$(dumpsys display 2>/dev/null | grep -o 'mActiveModeId=[0-9]*' | head -n 1)"
+    echo "mode_active=$(printf '%s\n' "$ds" | grep -o 'mActiveModeId=[0-9]*' | head -n 1)"
     # 策略层状态: 活文件里的截断开关。v1.5.0 起本模块不自挂载, policy_bind 恒为 no
     # (保留键名兼容旧消费方; 历史版本残留 bind 仍可能被检出, 卸载时摘除)
     pv=$(policy_rate "$POLICY_SRC")
@@ -521,7 +584,7 @@ case "$1" in
     echo "touch_sensitive=$(tp_level sensitive_level)"
     echo "touch_smooth=$(tp_level smooth_level)"
     # v1.5.2 追加: 系统是否允许切换刷新率(固定模式会卡 120); SF 1035 实验开关
-    echo "refresh_changeable=$(refresh_changeable)"
+    echo "refresh_changeable=$(refresh_changeable "$ds")"
     echo "sf_1035=${SF_1035_ENABLE:-0}"
     # v1.6.0 追加: 策略完整性与来源; 触控守护状态/目标档位/本次开机写回次数
     echo "policy_live_src=$(policy_src)"

@@ -18,7 +18,7 @@
 | 旧说法 | 一手源码结论 |
 |---|---|
 | 「写 game_switch 非 0 时固件同时把 smooth/sensitive 置默认值、major_rate_limit_times=0x0F」 | **对本机不成立**。v2 proc 写入里那两个副作用都有 `!array_support` / `major_rate_limit_support` 守卫，本机 DTS 全不满足。本机写 1 的唯一效果 = 给固件发 GAME_ON 命令（Novatek event-buffer 0x7D）+ 记录 noise_level。 |
-| 「灭屏会丢游戏模式，需要看门狗补写」 | **半个理由不成立**。v2 栈灭屏只对固件发 MODE_GAME,false，不清 `ts->noise_level`；亮屏 `speedup_resume → operate_mode_switch` **自动恢复**游戏模式并重放 smooth/sensitive chosen 档。真正的拉锯对手只有 ColorOS 用户态（游戏助手/触控服务经 HAL node 26 写 0，时机闭源）。 |
+| 「灭屏会丢游戏模式，需要看门狗补写」 | **半个理由不成立**。v2 栈灭屏**有条件**对固件发 MODE_GAME,false（`!is_incell_panel \|\| (black_gesture_support && gesture_enable>0)`；本机 incell → 仅双击手势开启时才发 GAME_OFF），不清 `ts->noise_level`；亮屏 `speedup_resume → operate_mode_switch` **自动恢复**游戏模式并重放 smooth/sensitive chosen 档。真正的拉锯对手只有 ColorOS 用户态（游戏助手/触控服务经 HAL node 26 写 0，时机闭源）。 |
 
 另：MODE_GAME 在内核 common 层只做 `value > 0` 布尔判断，**没有位掩码档位表**；社区流传的 node 26 十六进制魔法值（12c=360Hz 等）属于闭源 touchDaemon 的 framework_mode 路径，本机无该节点，直写 proc 不经过那张表，**不要照抄**。
 
@@ -31,7 +31,8 @@
 | `/proc/touchpanel/smooth_level` | ✅ | ✅ | 同上。**v1.5.0 主用**。 |
 | `/proc/touchpanel/touch_scene_para` | ✅ | ✅ | 官方场景通道，格式 `名字:整数;名字:整数`；关键字含 `sensitive_level`/`set_package_type` 等。系统按场景下发参数的同通道入口（备选，未采用）。`pen_sensitive_level` 动手写笔管线，**别碰**。 |
 | `/proc/touchpanel/touch_scene_default_para` | ✅ | 只读 | 厂商默认场景 XML（request_firmware 加载）。探针已补采。 |
-| `/proc/touchpanel/report_rate*`、`high_frame_rate` | ❌/no-op | — | DTS 无 support 或 NT36536 无回调。报点率由固件按显示刷新率自适应，用户态无旋钮。社区 182 节点属 S3910/hbp 栈，不适用本机。 |
+| `/proc/touchpanel/report_rate*`、`high_frame_rate` | ❌/no-op | — | DTS 无 support 或 NT36536 无回调。报点率由固件决定（**v1.6.2 更正：此前「随显示刷新率自适应」无内核源码依据**；2026-11-18 用户真机观察：报点≈2×显示刷新率、540Hz 仅 90Hz 显示档可达——方向获用户侧证据，倍数关系待受控实测）；用户态唯一入口是 `game_switch_enable=1`（固件 GAME_ON，见 [touch-rate-540-design.md](touch-rate-540-design.md)）。社区 182 节点属 S3910/hbp 栈，不适用本机。 |
+| `/proc/touchpanel/fd_touch_count`（及 `fd_enable`/`event_num`） | ❌ | — | 受 `face_detect_support` 门控（proc 节点表 L6137-6147），本机 DTS 无该属性 → **不创建**。即使存在也只统计人脸检测开启时上半屏中心区手指（`touch_count` 低 4 位 = `finger_num_center`，common_driver L1085-1089），不能当通用「手指按下」判据。守护写回避让改用 `/proc/interrupts` 触摸 IRQ 计数差值（v1.6.2，见 agent-notes §触控层）。 |
 | `/proc/oplus_touch_boost`、`/proc/oplus_frame_boost` | ✅ **是目录** | 未知 | 真机探针（2026-11-15）证实两者存在但为**目录**（旧版 `head -c` 读目录永远为空，已改为枚举文件名）。本分支源码 grep 不到创建者（可能闭源 ko）。**维持只记录不盲写**。同名官方实现实为 sysfs `/sys/devices/system/cpu/cpu*/touch_boost/`（CPU 提频，非触控报点）与 `/proc/sys/fbg/`（调度帧率 boost）。 |
 | `framework_mode` | ❌ | — | 本机探针实测不存在（README 既有结论）。 |
 
@@ -46,7 +47,7 @@
 | 4 | 128 | 10 | 12 |
 | 5 | 254 | 5 | 7 |
 
-- raw 值语义闭源（sensitive→EVENTBUFFER_EXT_JITTER_LEVEL 0x0C，smooth→EXT_SMOOTH_LEVEL 0x0D）；数值越小 presumably 越灵敏/越少平滑，**方向需真机 A/B 验证**，反了只改 config 默认值。
+- raw 值语义闭源（sensitive→EVENTBUFFER_EXT_JITTER_LEVEL 0x0C，smooth→EXT_SMOOTH_LEVEL 0x0D）；数值越小越灵敏/越少平滑（方向由真机手感单边反馈确认，见 §8；受控 A/B 仍待做），反了只改 config 默认值。raw 比值（如 15/10=1.5、96/32=3）**不能**线性换算成「抗抖/平滑强度 N 倍」——固件语义闭源，无换算依据。
 - 持久性：chosen 档存 `ts`，亮屏 resume 自动重放。覆盖来源：(a) 系统设置/游戏助手改档（官方意图，不对抗）；(b) **充电插拔切 charging 数组**（接受，不补写；proc 只能写 chosen，charging 表改不了）。
 
 ## 5. v1.5.0 采用的方案与理由
@@ -104,3 +105,18 @@ su -c 'sh /data/adb/modules/pad2pro_144_touch/tools/probe_oplus.sh'  # 全量探
 - [OplusTouchConstants.h](https://github.com/LineageOS/android_hardware_oplus/blob/lineage-23.0/aidl/touch/touch-headers/OplusTouchConstants.h)
 - 社区参考（工程模式，非本机接口）：[PLF110-Touch-Rate-Sync](https://github.com/lenluxue/PLF110-Touch-Rate-Sync)（事件驱动+白名单+还原+回读校验）、[aurorack](https://gitee.com/pzzzpsjjw/aurorack)（node 26/182 双通道探测）
 - 机制旁证：[OPPO 专利 CN115657870A](https://patents.google.com/patent/CN115657870A/zh)（按前台应用+场景列表决定 TP 采样率）
+
+## 8. v1.6.2 修正（2026-11-17）：档位方向已确认，540Hz 无挂载配置
+
+- **档位方向确认**：`sensitive_level` → `nvt_sensitive_lv_set()` → 固件 `EVENTBUFFER_EXT_JITTER_LEVEL(0x0C)`；
+  `smooth_level` → `EVENTBUFFER_EXT_SMOOTH_LEVEL(0x0D)`（`nvt_drivers_nt36536_noflash.h` L94-95 / `.c` L3199-3218，
+  `touchpanel_common.h` 无此常量、proc 只是单字节透传）。§4 的「数值越小越灵敏」由 DTS 单调数组 + 充电表整体抬高 raw
+  推定；**真机手感（4/1 下 FPS 准星微抖）提供了单边方向证据，2/3 vs 4/1 的受控 A/B 仍待做**。因此 v1.5.0–v1.6.1 的 `4/1`（raw 10/32）被判定过激，
+  默认改为 `2/3`（raw 15/96）。
+- **报点率与显示绑定（2026-11-18 用户真机观察）**：报点率≈2×显示刷新率（144Hz 显示→≈288Hz）；
+  540Hz 采样仅 90Hz 显示档可达，与本模块保 144 的目标互斥——144 下现实上限≈288Hz。
+  此为用户侧观察证据（非内核源码证据）；gs=0/1 两态的受控实测仍待做（`tools/touch_rate.sh`），
+  重点验证 gs=1 是否解锁 2× 绑定。另：`fd_touch_count` 本机不存在（§3 矩阵新增行），守护避让改用 IRQ 计数差值法。
+- **540Hz**：面板规格上限 540Hz / 默认 120Hz，但内核栈没有报点率旋钮（`report_rate` 节点被 support+callback 双重门控、
+  NT36536 无回调、DTS 无属性；`high_frame_rate` 载荷同样无回调）；场景配置 XML 虽由 `request_firmware` 加载、
+  可被模块覆盖，但键集只有 5 个且无速率键。详见 [touch-rate-540-design.md](touch-rate-540-design.md)。
